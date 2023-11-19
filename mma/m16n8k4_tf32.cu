@@ -54,7 +54,7 @@ void printCudaInfo() {
 __global__ void benchmark(float *d_A, float *d_B, float *d_C,
                           uint64_t *d_startClk, uint64_t *d_stopClk) {
   // Code to be executed on the GPU
-  int id = blockIdx.x * blockDim.x threadIdx.x;
+  int id = blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t start = 0;
   uint64_t stop = 0;
   // declare shared memory
@@ -178,15 +178,17 @@ int main() {
                             cudaMemcpyDeviceToHost));
 
   uint64_t total_time =
-      *std::max_element(stopClk, stopClk + THREADS_PER_BLOCK) -
-      *std::min_element(startClk, startClk + THREADS_PER_BLOCK);
+      *std::max_element(&stopClk[0], &stopClk[THREADS_PER_BLOCK]) -
+      *std::min_element(&startClk[0], &startClk[THREADS_PER_BLOCK]);
 
   uint64_t fma = 4 * 8 * 16 * ITERATIONS * THREADS_PER_BLOCK / 32;
   float bw = (float)fma / (float)total_time;
 
   std::cout << "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32  latency "
             << (float)total_time / (float)ITERATIONS << " cycles\n";
-  std::cout << "FMA tensor bandwidth = " << bw << "(FMA/clk/SM)\n";
+  std::cout << "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32  throughput "
+            << bw << " FMA/clk/SM\n";
+  std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_time << "\n";
 
