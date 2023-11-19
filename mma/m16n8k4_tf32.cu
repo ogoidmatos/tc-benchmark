@@ -79,16 +79,16 @@ __global__ void benchmark(float *d_A, float *d_B, float *d_C,
   // assembly ldmatrix
   asm volatile(
       ".reg .b32 %%a<2>;\n\t"
-      "ldmatrix.sync.aligned.m8n8.x2.b16 {%%a0, %%a1}, [%0];\n\t" ::"l"(
-          shared_A[id]));
+      "ldmatrix.sync.aligned.m8n8.x2.b16 {%%a0, %%a1}, [%0];\n\t" ::"r"(
+          (unsigned)shared_A[id]));
   asm volatile(
       ".reg .b32 b0;\n\t"
-      "ldmatrix.sync.aligned.m8n8.x1.trans.b16 {b0}, [%0];\n\t" ::"l"(
-          shared_B[id]));
+      "ldmatrix.sync.aligned.m8n8.x1.trans.b16 {b0}, [%0];\n\t" ::"r"(
+          (unsigned)shared_B[id]));
   asm volatile(
       ".reg .b32 %%c<4>;\n\t"
       "ldmatrix.sync.aligned.m8n8.x4.b16 {%%c0,%%c1,%%c2,%%c3}, [%0];\n\t" ::
-          "l"(shared_C[id]));
+          "r"(unsigned)(shared_C[id]));
 
   // synchronize threads
   asm volatile("bar.sync 0;");
@@ -100,7 +100,7 @@ __global__ void benchmark(float *d_A, float *d_B, float *d_C,
     asm volatile(
         "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 "
         "{%%c0,%%c1,%%c2,%%c3}, {%%a0,%%a1}, {b0}, {%%c0,%%c1,%%c2,%%c3};\n\t");
-    sync_warp();
+    __sync_warp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
