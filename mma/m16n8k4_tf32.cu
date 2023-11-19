@@ -10,8 +10,8 @@
 #include <iostream>
 
 #define THREADS_PER_BLOCK 256
-#define A_SIZE 16 * 4 * (THREADS_PER_BLOCK / 32)
-#define B_SIZE 8 * 4 * (THREADS_PER_BLOCK / 32)
+#define A_SIZE 16 * 8 * (THREADS_PER_BLOCK / 32)
+#define B_SIZE 8 * 8 * (THREADS_PER_BLOCK / 32)
 #define C_SIZE 16 * 8 * (THREADS_PER_BLOCK / 32)
 #define ITERATIONS 1024
 
@@ -57,38 +57,43 @@ __global__ void benchmark(float *d_A, float *d_B, float *d_C,
   int id = blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t start = 0;
   uint64_t stop = 0;
-  // declare shared memory
-  __shared__ float shared_A[A_SIZE];
-  __shared__ float shared_B[B_SIZE];
-  __shared__ float shared_C[C_SIZE];
+  // // declare shared memory
+  // __shared__ float shared_A[A_SIZE];
+  // __shared__ float shared_B[B_SIZE];
+  // __shared__ float shared_C[C_SIZE];
 
-  // initialize shared memory
-  for (int i = 0; i < A_SIZE; i++) {
-    shared_A[i] = d_A[i];
-  }
-  for (int i = 0; i < B_SIZE; i++) {
-    shared_B[i] = d_B[i];
-  }
-  for (int i = 0; i < C_SIZE; i++) {
-    shared_C[i] = d_C[i];
-  }
+  // // initialize shared memory
+  // for (int i = 0; i < A_SIZE; i++) {
+  //   shared_A[i] = d_A[i];
+  // }
+  // for (int i = 0; i < B_SIZE; i++) {
+  //   shared_B[i] = d_B[i];
+  // }
+  // for (int i = 0; i < C_SIZE; i++) {
+  //   shared_C[i] = d_C[i];
+  // }
 
-  // synchronize threads
-  asm volatile("bar.sync 0;");
+  // // synchronize threads
+  // asm volatile("bar.sync 0;");
+
+  // // assembly ldmatrix
+  // asm volatile(
+  //     ".reg .f16x2 a<2>;\n\t"
+  //     "ldmatrix.sync.aligned.m8n8.x2.b16 {a0, a1}, [%0];\n\t" ::"r"(
+  //         (unsigned)shared_A[id]));
+  // asm volatile(
+  //     ".reg .f16x2 b0;\n\t"
+  //     "ldmatrix.sync.aligned.m8n8.x1.trans.b16 {b0}, [%0];\n\t" ::"r"(
+  //         (unsigned)shared_B[id]));
+  // asm volatile(
+  //     ".reg .f32 c<4>;\n\t"
+  //     "ldmatrix.sync.aligned.m8n8.x4.b16 {c0,c1,c2,c3}, [%0];\n\t" ::"r"(
+  //         (unsigned)shared_C[id]));
 
   // assembly ldmatrix
-  asm volatile(
-      ".reg .b32 %%a<2>;\n\t"
-      "ldmatrix.sync.aligned.m8n8.x2.b16 {%%a0, %%a1}, [%0];\n\t" ::"r"(
-          (unsigned)shared_A[id]));
-  asm volatile(
-      ".reg .b32 b0;\n\t"
-      "ldmatrix.sync.aligned.m8n8.x1.trans.b16 {b0}, [%0];\n\t" ::"r"(
-          (unsigned)shared_B[id]));
-  asm volatile(
-      ".reg .b32 %%c<4>;\n\t"
-      "ldmatrix.sync.aligned.m8n8.x4.b16 {%%c0,%%c1,%%c2,%%c3}, [%0];\n\t" ::
-          "r"((unsigned)shared_C[id]));
+  asm volatile(".reg .f16x2 a<2>;");
+  asm volatile(".reg .f16x2 b0;");
+  asm volatile(".reg .f32 c<4>;");
 
   // synchronize threads
   asm volatile("bar.sync 0;");
@@ -98,8 +103,8 @@ __global__ void benchmark(float *d_A, float *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32 "
-        "{%%c0,%%c1,%%c2,%%c3}, {%%a0,%%a1}, {b0}, {%%c0,%%c1,%%c2,%%c3};\n\t");
+        "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 "
+        "{c0,c1,c2,c3}, {a0,a1}, {b0}, {c0,c1,c2,c3};\n\t");
     __syncwarp();
   }
   // stop timing
@@ -177,17 +182,19 @@ int main() {
                             THREADS_PER_BLOCK * sizeof(uint64_t),
                             cudaMemcpyDeviceToHost));
 
-  uint64_t total_time =
-      *std::max_element(&stopClk[0], &stopClk[THREADS_PER_BLOCK]) -
-      *std::min_element(&startClk[0], &startClk[THREADS_PER_BLOCK]);
+  cudaCheckError(cudaDeviceSynchronize());
 
-  uint64_t fma = 4 * 8 * 16 * ITERATIONS * THREADS_PER_BLOCK / 32;
+  uint64_t total_time =
+      *std::max_element(stopClk, stopClk + THREADS_PER_BLOCK) -
+      *std::min_element(startClk, startClk + THREADS_PER_BLOCK);
+
+  uint64_t fma = 8 * 8 * 16 * ITERATIONS * THREADS_PER_BLOCK / 32;
   float bw = (float)fma / (float)total_time;
 
   std::cout << "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32  latency "
             << (float)total_time / (float)ITERATIONS << " cycles\n";
   std::cout << "mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32  throughput "
-            << bw << " FMA/clk/SM\n";
+            << fma << " FMA/clk/SM\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_time << "\n";
