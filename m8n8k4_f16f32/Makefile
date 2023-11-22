@@ -1,6 +1,6 @@
 EXECUTABLE := mma
 
-CU_FILES   := m16n8k4_tf32.cu
+CU_FILES   := m8n8k4_fp16fp32.cu
 
 CU_DEPS    :=
 
@@ -17,10 +17,10 @@ CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L/usr/local/cuda/lib64/ -lcudart
 NVCC=nvcc
-NVCCFLAGS= -Xptxas -dlcm=cv -Xptxas -dscm=wt -gencode=arch=compute_86,code=\"sm_86,compute_86\" -G
+NVCCFLAGS= -Xptxas -dlcm=cv -Xptxas -dscm=wt -gencode=arch=compute_86,code=\"sm_86,compute_86\"
 
 
-OBJS= $(OBJDIR)/m16n8k4_tf32.o
+OBJS= $(OBJDIR)/m8n8k4_fp16fp32.o
 
 
 .PHONY: dirs clean

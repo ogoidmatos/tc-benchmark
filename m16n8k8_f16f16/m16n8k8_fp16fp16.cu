@@ -131,11 +131,11 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
   half fragsB[2];
   half fragsC[4];
 
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 4; i++) {
     fragsA[i] = d_A[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
   }
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 2; i++) {
     fragsB[i] = d_B[i + id * 2];
   }
 
@@ -157,11 +157,6 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
         "{%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
         : "+r"(C[0]), "+r"(C[1])
         : "r"(A[0]), "r"(A[1]), "r"(B[0]));
-    asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 "
-        "{%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
-        : "+r"(C[2]), "+r"(C[3])
-        : "r"(A[2]), "r"(A[3]), "r"(B[1]));
     __syncwarp();
   }
   // stop timing
@@ -252,9 +247,9 @@ int main() {
   uint64_t fma = 8 * 8 * 16 * ITERATIONS * THREADS_PER_BLOCK / 32;
   float bw = (float)fma / (float)total_time;
 
-  std::cout << "mma.sync.aligned.m16n8k4.row.col.f16.f16.f16.f16  latency "
+  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  latency "
             << (float)total_time / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k4.row.col.f16.f16.f16.f16  FMA Count "
+  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
