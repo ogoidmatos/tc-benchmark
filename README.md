@@ -1,6 +1,6 @@
 # tc-benchmark
 
-Code for Tensor Core Micro Benchmarking, for PIC2 MEEC
+Code for Tensor Core Micro Benchmarking for PIC2 MEEC
 
 ## Current Tasks
 
@@ -14,7 +14,7 @@ Code for Tensor Core Micro Benchmarking, for PIC2 MEEC
 - [ ] Double Precision
 - [ ] Integer
 
-## Table
+## Benchmarking Results
 
 | Inputs | Accumulators |  Shape   | FMA/clk/SM | FLOPs |
 | ------ | ------------ | -------- | ---------- | ----- |
