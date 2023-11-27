@@ -9,11 +9,15 @@
 #include <cstdlib>
 #include <iostream>
 
-#define THREADS_PER_BLOCK 512
-#define A_SIZE 16 * 8 * (THREADS_PER_BLOCK / 32)
-#define B_SIZE 8 * 8 * (THREADS_PER_BLOCK / 32)
-#define C_SIZE 16 * 8 * (THREADS_PER_BLOCK / 32)
-#define ITERATIONS 1024
+#define M 16
+#define N 8
+#define K 8
+
+#define THREADS_PER_BLOCK 1024
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32)
+#define B_SIZE K *N *(THREADS_PER_BLOCK / 32)
+#define C_SIZE M *N *(THREADS_PER_BLOCK / 32)
+#define ITERATIONS 32768
 
 #define DEBUG
 #ifdef DEBUG
@@ -48,74 +52,6 @@ void printCudaInfo() {
     printf("   CUDA Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
   }
   printf("---------------------------------------------------------\n");
-}
-
-// Kernel function
-__global__ void benchmark(float *d_A, float *d_B, float *d_C,
-                          uint64_t *d_startClk, uint64_t *d_stopClk) {
-  // Code to be executed on the GPU
-  int id = blockIdx.x * blockDim.x + threadIdx.x;
-  uint64_t start = 0;
-  uint64_t stop = 0;
-  // // declare shared memory
-  // __shared__ float shared_A[A_SIZE];
-  // __shared__ float shared_B[B_SIZE];
-  // __shared__ float shared_C[C_SIZE];
-
-  // // initialize shared memory
-  // for (int i = 0; i < A_SIZE; i++) {
-  //   shared_A[i] = d_A[i];
-  // }
-  // for (int i = 0; i < B_SIZE; i++) {
-  //   shared_B[i] = d_B[i];
-  // }
-  // for (int i = 0; i < C_SIZE; i++) {
-  //   shared_C[i] = d_C[i];
-  // }
-
-  // // synchronize threads
-  // asm volatile("bar.sync 0;");
-
-  // // assembly ldmatrix
-  // asm volatile(
-  //     ".reg .f16x2 a<2>;\n\t"
-  //     "ldmatrix.sync.aligned.m8n8.x2.b16 {a0, a1}, [%0];\n\t" ::"r"(
-  //         (unsigned)shared_A[id]));
-  // asm volatile(
-  //     ".reg .f16x2 b0;\n\t"
-  //     "ldmatrix.sync.aligned.m8n8.x1.trans.b16 {b0}, [%0];\n\t" ::"r"(
-  //         (unsigned)shared_B[id]));
-  // asm volatile(
-  //     ".reg .f32 c<4>;\n\t"
-  //     "ldmatrix.sync.aligned.m8n8.x4.b16 {c0,c1,c2,c3}, [%0];\n\t" ::"r"(
-  //         (unsigned)shared_C[id]));
-
-  // assembly ldmatrix
-  asm volatile(".reg .f16x2 a<2>;");
-  asm volatile(".reg .f16x2 b0;");
-  asm volatile(".reg .f32 c<4>;");
-
-  // synchronize threads
-  asm volatile("bar.sync 0;");
-
-  // start timing
-  asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
-  for (int i = 0; i < ITERATIONS; i++) {
-    // assembly mma
-    asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 "
-        "{c0,c1,c2,c3}, {a0,a1}, {b0}, {c0,c1,c2,c3};\n\t");
-    __syncwarp();
-  }
-  // stop timing
-  asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
-
-  // asm volatile(
-  //     "stmatrix.sync.aligned.m8n8.x4.b16 [%0], {c0,c1,c2,c3};\n\t" ::"r"(
-  //         (unsigned)d_C[id]));
-
-  d_startClk[id] = start;
-  d_stopClk[id] = stop;
 }
 
 // Kernel function
@@ -157,7 +93,7 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
         "{%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
         : "+r"(C[0]), "+r"(C[1])
         : "r"(A[0]), "r"(A[1]), "r"(B[0]));
-    __syncwarp();
+    //__syncwarp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
@@ -244,7 +180,7 @@ int main() {
       *std::max_element(stopClk, stopClk + THREADS_PER_BLOCK) -
       *std::min_element(startClk, startClk + THREADS_PER_BLOCK);
 
-  uint64_t fma = 8 * 8 * 16 * ITERATIONS * THREADS_PER_BLOCK / 32;
+  uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32);
   float bw = (float)fma / (float)total_time;
 
   std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  latency "

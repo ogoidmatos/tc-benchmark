@@ -17,7 +17,7 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32)
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32)
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32)
-#define ITERATIONS 1024
+#define ITERATIONS 32768
 
 #define DEBUG
 #ifdef DEBUG
@@ -65,7 +65,7 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   // create registers for threads
   half fragsA[4];
   half fragsB[4];
-  half fragsC[8];
+  float fragsC[8];
 
   for (int i = 0; i < 8; i++) {
     fragsC[i] = d_C[i + id * 8];
@@ -78,7 +78,7 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
-  uint32_t *C = reinterpret_cast<uint32_t *>(&fragsC[0]);
+  float *C = reinterpret_cast<float *>(&fragsC[0]);
 
   // synchronize threads
   asm volatile("bar.sync 0;");
@@ -89,12 +89,13 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m8n8k4.row.col.f16.f16.f16.f16 "
-        "{%0,%1,%2,%3}, {%4,%5}, {%6,%7}, "
-        "{%0,%1,%2,%3};\n"
-        : "+r"(C[0]), "+r"(C[1]), "+r"(C[2]), "+r"(C[3])
+        "mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32 "
+        "{%0,%1,%2,%3,%4,%5,%6,%7}, {%8,%9}, {%10,%11}, "
+        "{%0,%1,%2,%3,%4,%5,%6,%7};\n"
+        : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3]), "+f"(C[4]),
+          "+f"(C[5]), "+f"(C[6]), "+f"(C[7])
         : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]));
-    __syncwarp();
+    //__syncwarp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
@@ -182,7 +183,7 @@ int main() {
       *std::max_element(stopClk, stopClk + THREADS_PER_BLOCK) -
       *std::min_element(startClk, startClk + THREADS_PER_BLOCK);
 
-  uint64_t fma = M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32);
+  uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32);
   float bw = (float)fma / (float)total_time;
 
   std::cout << "mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32  latency "

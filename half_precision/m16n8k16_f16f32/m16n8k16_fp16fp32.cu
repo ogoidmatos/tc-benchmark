@@ -17,7 +17,7 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32)
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32)
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32)
-#define ITERATIONS 1024
+#define ITERATIONS 32768
 
 #define DEBUG
 #ifdef DEBUG
@@ -93,7 +93,7 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
         "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
         : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
         : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
-    __syncwarp();
+    //__syncwarp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
@@ -181,7 +181,7 @@ int main() {
       *std::max_element(stopClk, stopClk + THREADS_PER_BLOCK) -
       *std::min_element(startClk, startClk + THREADS_PER_BLOCK);
 
-  uint64_t fma = M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32);
+  uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32);
   float bw = (float)fma / (float)total_time;
 
   std::cout << "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32  latency "
