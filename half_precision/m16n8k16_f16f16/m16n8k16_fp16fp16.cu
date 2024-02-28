@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "nvml_tools.cu"
+#include "../../nvml_tools.cu"
 
 #define M 16
 #define N 8

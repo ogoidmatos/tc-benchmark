@@ -1,6 +1,6 @@
 EXECUTABLE := mma
 
-CU_FILES   := m16n8k16_fp16fp16.cu nvml_tools.cu
+CU_FILES   := m16n8k16_fp16fp16.cu ../../nvml_tools.cu
 
 CU_DEPS    :=
 
