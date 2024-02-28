@@ -74,7 +74,7 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   for (int i = 0; i < 2; i++) {
     fragsA[i] = d_A[i + id * 2];
   }
-  fragsB[i] = d_B[i];
+  fragsB[0] = d_B[id];
   for (int i = 0; i < 4; i++) {
     fragsC[i] = d_C[i + id * 4];
   }
