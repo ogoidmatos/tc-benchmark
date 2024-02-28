@@ -8,6 +8,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
+#include <vector>
+
+#include "nvml_tools.cu"
 
 #define M 16
 #define N 8
@@ -18,7 +22,7 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 * 32
 
 #define DEBUG
 #ifdef DEBUG
@@ -119,6 +123,17 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
 int main() {
   // Code to be executed on the CPU
 
+  // start nvml
+  // thread to measure power configuration
+  std::thread measuring_thread;
+  monitor_args thread_args;
+  thread_args.powerArray = std::vector<int>();
+  thread_args.clockArray = std::vector<int>();
+  thread_args.flag = 0;
+
+  init_nvml(&thread_args, &measuring_thread);
+  cudaCheckError(cudaDeviceSynchronize());
+
   // Print CUDA info
   printCudaInfo();
 
@@ -181,12 +196,15 @@ int main() {
   cudaCheckError(cudaMalloc((void **)&d_timeStop,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(uint64_t)));
 
+  thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_A, d_B, d_C, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
+  thread_args.flag = 0;
+  stop_nvml(&measuring_thread, thread_args.powerArray, thread_args.clockArray);
 
   // Copy device memory to host
   cudaCheckError(cudaMemcpy(startClk, d_startClk,

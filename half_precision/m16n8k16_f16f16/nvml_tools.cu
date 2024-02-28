@@ -1,0 +1,106 @@
+#include <nvml.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include <algorithm>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <thread>
+#include <vector>
+
+typedef struct {
+  std::vector<int> powerArray;
+  std::vector<int> clockArray;
+  nvmlDevice_t device;
+  int flag;
+} monitor_args;
+
+void monitoring(monitor_args* args) {
+  nvmlReturn_t result;
+
+  unsigned int power;
+  unsigned int clockSM;
+
+  nvmlDevice_t device;
+  result = nvmlDeviceGetHandleByIndex(0, &device);
+  if (NVML_SUCCESS != result) {
+    printf("Failed to get handle for device 0: %s\n", nvmlErrorString(result));
+    exit(1);
+  }
+
+  // waiting to start measuring
+  while (args->flag == 0) {
+  }
+
+  while (args->flag) {
+    power = 0;
+    clockSM = 0;
+    result = nvmlDeviceGetPowerUsage(device, &power);
+    if (NVML_ERROR_NOT_SUPPORTED == result)
+      printf("This does not support power measurement\n");
+    else if (NVML_SUCCESS != result) {
+      printf("Failed to get power for device %i: %s\n", 0,
+             nvmlErrorString(result));
+      exit(1);
+    }
+
+    result = nvmlDeviceGetClock(device, NVML_CLOCK_SM, NVML_CLOCK_ID_CURRENT,
+                                &clockSM);
+    if (NVML_ERROR_NOT_SUPPORTED == result)
+      printf("This does not support clock measurement\n");
+    else if (NVML_SUCCESS != result) {
+      printf("Failed to get SM clock for device 0: %s\n",
+             nvmlErrorString(result));
+      exit(1);
+    }
+
+    (args->powerArray).push_back(power / 1000);
+    (args->clockArray).push_back(clockSM);
+    printf("Power: %d W  ", power / 1000);
+    printf("Clock: %d MHz\n", clockSM);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return;
+}
+
+void init_nvml(monitor_args* thread_args, std::thread* measuring_thread) {
+  nvmlReturn_t result;
+  result = nvmlInit();
+  if (NVML_SUCCESS != result) {
+    printf("Failed to initialize NVML: %s\n", nvmlErrorString(result));
+    exit(1);
+  }
+
+  nvmlDevice_t device;
+  result = nvmlDeviceGetHandleByIndex(0, &device);
+  if (NVML_SUCCESS != result) {
+    printf("Failed to get handle for device 0: %s\n", nvmlErrorString(result));
+    exit(1);
+  }
+
+  thread_args->device = device;
+
+  *measuring_thread = std::thread(monitoring, thread_args);
+  return;
+}
+
+void stop_nvml(std::thread* measuring_thread, std::vector<int> powerArray,
+               std::vector<int> clockArray) {
+  measuring_thread->join();
+  nvmlReturn_t result;
+  result = nvmlShutdown();
+  if (NVML_SUCCESS != result) {
+    printf("Failed to shutdown NVML: %s\n", nvmlErrorString(result));
+    exit(1);
+  }
+  // write results to file
+  std::ofstream statsFile;
+  statsFile.open("power.csv");
+  for (int i = 0; i < powerArray.size(); i++) {
+    statsFile << (float)i * 10.0 / 1000 << "; " << powerArray[i] << "; "
+              << clockArray[i] << "; " << std::endl;
+  }
+  statsFile.close();
+  return;
+}
