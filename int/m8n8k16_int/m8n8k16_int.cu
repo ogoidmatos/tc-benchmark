@@ -56,7 +56,7 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
+__global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
                               uint64_t *d_startClk, uint64_t *d_stopClk,
                               uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -67,22 +67,20 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  float fragsA[4];
-  float fragsB[2];
-  float fragsC[4];
+  int fragsA[1];
+  int fragsB[1];
+  int fragsC[2];
 
-  for (int i = 0; i < 4; i++) {
-    fragsA[i] = d_A[i + id * 4];
-    fragsC[i] = d_C[i + id * 4];
-  }
   for (int i = 0; i < 2; i++) {
-    fragsB[i] = d_B[i + id * 2];
+    fragsC[i] = d_C[i + id * 2];
   }
+  fragsA[0] = d_A[id];
+  fragsB[0] = d_B[id];
 
-  uint32_t const *A = reinterpret_cast<uint32_t const *>(
-      &fragsA[0]);  // change from half to bit 32 which is what the mma takes
-  uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
-  float *C = reinterpret_cast<float *>(&fragsC[0]);
+  // uint32_t const *A = reinterpret_cast<uint32_t const *>(
+  //     &fragsA[0]);  // change from half to bit 32 which is what the mma takes
+  // uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
+  // float *C = reinterpret_cast<float *>(&fragsC[0]);
 
   // synchronize threads
   asm volatile("bar.sync 0;");
@@ -94,18 +92,18 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
-        : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
-        : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+        "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 "
+        "{%0,%1}, {%2}, {%3}, {%0,%1};\n"
+        : "+r"(C[0]), "+r"(C[1])
+        : "r"(A[0]), "r"(B[0]));
     //__syncwarp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
 
-  for (int i = 0; i < 4; i++) {
-    d_C[i + id * 4] = fragsC[i];
+  for (int i = 0; i < 2; i++) {
+    d_C[i + id * 2] = fragsC[i];
   }
 
   d_startClk[id] = start;
@@ -127,9 +125,9 @@ int main() {
   int dimC = C_SIZE;  // dimC is the same as dimD
 
   // Allocate host memory
-  float *h_A = (float *)malloc(dimA * sizeof(float));
-  float *h_B = (float *)malloc(dimB * sizeof(float));
-  float *h_C = (float *)malloc(dimC * sizeof(float));
+  int *h_A = (int *)malloc(dimA * sizeof(int));
+  int *h_B = (int *)malloc(dimB * sizeof(int));
+  int *h_C = (int *)malloc(dimC * sizeof(int));
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
@@ -143,18 +141,18 @@ int main() {
   }
 
   // Allocate device memory
-  float *d_A, *d_B, *d_C;
-  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(float)));
-  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(float)));
-  cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(float)));
+  int *d_A, *d_B, *d_C;
+  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(int)));
+  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(int)));
+  cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(int)));
 
   // Copy host memory to device
   cudaCheckError(
-      cudaMemcpy(d_A, h_A, dimA * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_A, h_A, dimA * sizeof(int), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_B, h_B, dimB * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_B, h_B, dimB * sizeof(int), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_C, h_C, dimC * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_C, h_C, dimC * sizeof(int), cudaMemcpyHostToDevice));
 
   // handle clock
   uint64_t *startClk =
@@ -218,9 +216,9 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  latency "
+  std::cout << "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  FMA Count "
+  std::cout << "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
