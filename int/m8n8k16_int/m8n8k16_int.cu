@@ -94,8 +94,8 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
     asm volatile(
         "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 "
         "{%0,%1}, {%2}, {%3}, {%0,%1};\n"
-        : "+r"(C[0]), "+r"(C[1])
-        : "r"(A[0]), "r"(B[0]));
+        : "+r"(fragsC[0]), "+r"(fragsC[1])
+        : "r"(fragsA[0]), "r"(fragsB[0]));
     //__syncwarp();
   }
   // stop timing
