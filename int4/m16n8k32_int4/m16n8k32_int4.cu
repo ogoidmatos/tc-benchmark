@@ -67,16 +67,16 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  int fragsA[4];
-  int fragsB[2];
+  int fragsA[2];
+  int fragsB[1];
   int fragsC[4];
 
-  for (int i = 0; i < 2; i++) {
-    fragsB[i] = d_B[i + id * 2];
-  }
   for (int i = 0; i < 4; i++) {
-    fragsA[i] = d_B[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
+  }
+  fragsB[0] = d_B[id];
+  for (int i = 0; i < 2; i++) {
+    fragsA[i] = d_A[i + id * 2];
   }
 
   // uint32_t const *A = reinterpret_cast<uint32_t const *>(
@@ -94,11 +94,10 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%6,%8}, {%0,%1,%2,%3};\n"
+        "mma.sync.aligned.m16n8k32.row.col.s32.s4.s4.s32 "
+        "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
         : "+r"(fragsC[0]), "+r"(fragsC[1]), "+r"(fragsC[2]), "+r"(fragsC[3])
-        : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsA[2]), "r"(fragsA[3]),
-          "r"(fragsB[0]), "r"(fragsB[1]));
+        : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsB[0]));
     //__syncwarp();
   }
   // stop timing
@@ -134,18 +133,17 @@ int main() {
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
-    h_A[i] = 0.0f;
+    h_A[i] = 0;
   }
   for (int i = 0; i < dimB; i++) {
-    h_B[i] = 0.0f;
+    h_B[i] = 0;
   }
   for (int i = 0; i < dimC; i++) {
-    h_C[i] = 0.0f;
+    h_C[i] = 0;
   }
 
   // Allocate device memory
-  int *d_A, *d_B;
-  int *d_C;
+  int *d_A, *d_B, *d_C;
   cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(int)));
   cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(int)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(int)));
@@ -220,9 +218,9 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32  latency "
+  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s4.s4.s32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32  FMA Count "
+  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s4.s4.s32  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
@@ -230,6 +228,8 @@ int main() {
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
+
+  std::cout << "---------------------------------------------------------\n";
 
   // Free device memory
   cudaCheckError(cudaFree(d_A));

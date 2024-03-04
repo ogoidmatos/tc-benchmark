@@ -92,7 +92,7 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m8n8k16.row.col.s32.s4.s4.s32 "
+        "mma.sync.aligned.m8n8k32.row.col.s32.s4.s4.s32 "
         "{%0,%1}, {%2}, {%3}, {%0,%1};\n"
         : "+r"(fragsC[0]), "+r"(fragsC[1])
         : "r"(fragsA[0]), "r"(fragsB[0]));

@@ -11,10 +11,10 @@
 
 #define M 16
 #define N 8
-#define K 16
+#define K 64
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
+#define NUM_BLOCKS 32768 / 4  // divided by 4 to reduce the ammount of memory
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
@@ -67,16 +67,16 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  int fragsA[2];
-  int fragsB[1];
+  int fragsA[4];
+  int fragsB[2];
   int fragsC[4];
 
-  for (int i = 0; i < 4; i++) {
-    fragsC[i] = d_C[i + id * 4];
-  }
-  fragsB[0] = d_B[id];
   for (int i = 0; i < 2; i++) {
-    fragsA[i] = d_A[i + id * 2];
+    fragsB[i] = d_B[i + id * 2];
+  }
+  for (int i = 0; i < 4; i++) {
+    fragsA[i] = d_B[i + id * 4];
+    fragsC[i] = d_C[i + id * 4];
   }
 
   // uint32_t const *A = reinterpret_cast<uint32_t const *>(
@@ -94,10 +94,11 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32 "
-        "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
+        "mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32 "
+        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%6,%8}, {%0,%1,%2,%3};\n"
         : "+r"(fragsC[0]), "+r"(fragsC[1]), "+r"(fragsC[2]), "+r"(fragsC[3])
-        : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsB[0]));
+        : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsA[2]), "r"(fragsA[3]),
+          "r"(fragsB[0]), "r"(fragsB[1]));
     //__syncwarp();
   }
   // stop timing
@@ -133,17 +134,18 @@ int main() {
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
-    h_A[i] = 0;
+    h_A[i] = 0.0f;
   }
   for (int i = 0; i < dimB; i++) {
-    h_B[i] = 0;
+    h_B[i] = 0.0f;
   }
   for (int i = 0; i < dimC; i++) {
-    h_C[i] = 0;
+    h_C[i] = 0.0f;
   }
 
   // Allocate device memory
-  int *d_A, *d_B, *d_C;
+  int *d_A, *d_B;
+  int *d_C;
   cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(int)));
   cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(int)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(int)));
@@ -218,9 +220,9 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32  latency "
+  std::cout << "mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k16.row.col.s32.s8.s8.s32  FMA Count "
+  std::cout << "mma.sync.aligned.m16n8k64.row.col.s32.s4.s4.s32  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
@@ -228,8 +230,6 @@ int main() {
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
-
-  std::cout << "---------------------------------------------------------\n";
 
   // Free device memory
   cudaCheckError(cudaFree(d_A));
