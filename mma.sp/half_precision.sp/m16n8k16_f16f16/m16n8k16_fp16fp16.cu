@@ -8,17 +8,21 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
+#include <vector>
 
-#define M 8
+#include "../../../nvml_tools.cu"
+
+#define M 16
 #define N 8
-#define K 4
+#define K 16
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 512
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define NUM_BLOCKS 32768
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2  // sparse matrix
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 * 32
 
 #define DEBUG
 #ifdef DEBUG
@@ -51,12 +55,13 @@ void printCudaInfo() {
     printf("   Global mem: %.0f MB\n",
            static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
     printf("   CUDA Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
+    printf("   Clock:      %.2f MHz\n", (deviceProps.clockRate / 1000.0f));
   }
   printf("---------------------------------------------------------\n");
 }
 
 // Kernel function
-__global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
+__global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
                               uint64_t *d_startClk, uint64_t *d_stopClk,
                               uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -69,20 +74,18 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   // create registers for threads
   half fragsA[4];
   half fragsB[4];
-  float fragsC[8];
+  half fragsC[4];
 
-  for (int i = 0; i < 8; i++) {
-    fragsC[i] = d_C[i + id * 8];
-  }
   for (int i = 0; i < 4; i++) {
-    fragsB[i] = d_B[i + id * 4];
     fragsA[i] = d_A[i + id * 4];
+    fragsB[i] = d_B[i + id * 4];
+    fragsC[i] = d_C[i + id * 4];
   }
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
-  float *C = reinterpret_cast<float *>(&fragsC[0]);
+  uint32_t *C = reinterpret_cast<uint32_t *>(&fragsC[0]);
 
   // synchronize threads
   asm volatile("bar.sync 0;");
@@ -94,11 +97,9 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32 "
-        "{%0,%1,%2,%3,%4,%5,%6,%7}, {%8,%9}, {%10,%11}, "
-        "{%0,%1,%2,%3,%4,%5,%6,%7};\n"
-        : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3]), "+f"(C[4]),
-          "+f"(C[5]), "+f"(C[6]), "+f"(C[7])
+        "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
+        "{%0,%1}, {%2,%3}, {%4,%6}, {%0,%1}, 0xC, 0x0;\n"
+        : "+r"(C[0]), "+r"(C[1])
         : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]));
     //__syncwarp();
   }
@@ -106,8 +107,8 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
 
-  for (int i = 0; i < 8; i++) {
-    d_C[i + id * 8] = fragsC[i];
+  for (int i = 0; i < 4; i++) {
+    d_C[i + id * 4] = fragsC[i];
   }
 
   d_startClk[id] = start;
@@ -120,6 +121,17 @@ __global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
 int main() {
   // Code to be executed on the CPU
 
+  // start nvml
+  // thread to measure power configuration
+  std::thread measuring_thread;
+  monitor_args thread_args;
+  thread_args.powerArray = std::vector<int>();
+  thread_args.clockArray = std::vector<int>();
+  thread_args.flag = 0;
+
+  init_nvml(&thread_args, &measuring_thread);
+  cudaCheckError(cudaDeviceSynchronize());
+
   // Print CUDA info
   printCudaInfo();
 
@@ -131,7 +143,7 @@ int main() {
   // Allocate host memory
   half *h_A = (half *)malloc(dimA * sizeof(half));
   half *h_B = (half *)malloc(dimB * sizeof(half));
-  float *h_C = (float *)malloc(dimC * sizeof(float));
+  half *h_C = (half *)malloc(dimC * sizeof(half));
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
@@ -145,11 +157,10 @@ int main() {
   }
 
   // Allocate device memory
-  half *d_A, *d_B;
-  float *d_C;
+  half *d_A, *d_B, *d_C;
   cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(half)));
   cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(half)));
-  cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(float)));
+  cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(half)));
 
   // Copy host memory to device
   cudaCheckError(
@@ -157,7 +168,7 @@ int main() {
   cudaCheckError(
       cudaMemcpy(d_B, h_B, dimB * sizeof(half), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_C, h_C, dimC * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_C, h_C, dimC * sizeof(half), cudaMemcpyHostToDevice));
 
   // handle clock
   uint64_t *startClk =
@@ -183,12 +194,15 @@ int main() {
   cudaCheckError(cudaMalloc((void **)&d_timeStop,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(uint64_t)));
 
+  thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_A, d_B, d_C, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
+  thread_args.flag = 0;
+  stop_nvml(&measuring_thread, thread_args.powerArray, thread_args.clockArray);
 
   // Copy device memory to host
   cudaCheckError(cudaMemcpy(startClk, d_startClk,
@@ -221,10 +235,11 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32  latency "
+  std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m8n8k4.row.col.f32.f16.f16.f32  FMA Count "
-            << fma << "\n";
+  std::cout
+      << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
+      << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
