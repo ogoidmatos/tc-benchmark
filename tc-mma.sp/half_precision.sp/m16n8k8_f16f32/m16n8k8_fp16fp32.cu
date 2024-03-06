@@ -11,11 +11,11 @@
 
 #define M 16
 #define N 8
-#define K 8
+#define K 16
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2  // sparse matrix
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
@@ -56,7 +56,7 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
+__global__ void benchmark_alt(half *d_A, half *d_B, float *d_C,
                               uint64_t *d_startClk, uint64_t *d_stopClk,
                               uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -68,16 +68,16 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
 
   // create registers for threads
   half fragsA[4];
-  half fragsB[2];
+  half fragsB[4];
   float fragsC[4];
 
   for (int i = 0; i < 4; i++) {
     fragsA[i] = d_A[i + id * 4];
+    fragsB[i] = d_B[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
   }
-  for (int i = 0; i < 2; i++) {
-    fragsB[i] = d_B[i + id * 2];
-  }
+
+  int meta = 0xCCCC;
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
@@ -94,10 +94,10 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 "
-        "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};\n"
+        "mma.sp.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 "
+        "{%0,%1,%2,%3}, {%4,%5}, {%6,%7}, {%0,%1,%2,%3}, %8, 0x0;\n"
         : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
-        : "r"(A[0]), "r"(A[1]), "r"(B[0]));
+        : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]), "r"(meta));
     //__syncwarp();
   }
   // stop timing
@@ -127,8 +127,8 @@ int main() {
   int dimC = C_SIZE;  // dimC is the same as dimD
 
   // Allocate host memory
-  float *h_A = (float *)malloc(dimA * sizeof(float));
-  float *h_B = (float *)malloc(dimB * sizeof(float));
+  half *h_A = (half *)malloc(dimA * sizeof(half));
+  half *h_B = (half *)malloc(dimB * sizeof(half));
   float *h_C = (float *)malloc(dimC * sizeof(float));
 
   // Initialize host memory
@@ -143,16 +143,17 @@ int main() {
   }
 
   // Allocate device memory
-  float *d_A, *d_B, *d_C;
-  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(float)));
-  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(float)));
+  half *d_A, *d_B;
+  float *d_C;
+  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(half)));
+  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(half)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(float)));
 
   // Copy host memory to device
   cudaCheckError(
-      cudaMemcpy(d_A, h_A, dimA * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_A, h_A, dimA * sizeof(half), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_B, h_B, dimB * sizeof(float), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_B, h_B, dimB * sizeof(half), cudaMemcpyHostToDevice));
   cudaCheckError(
       cudaMemcpy(d_C, h_C, dimC * sizeof(float), cudaMemcpyHostToDevice));
 
@@ -218,18 +219,17 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32  latency "
+  std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32  FMA Count "
-            << fma << "\n";
+  std::cout
+      << "mma.sp.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32  FMA Count "
+      << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
-
-  std::cout << "---------------------------------------------------------\n";
 
   // Free device memory
   cudaCheckError(cudaFree(d_A));

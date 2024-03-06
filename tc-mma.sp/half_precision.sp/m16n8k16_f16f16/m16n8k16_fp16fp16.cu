@@ -82,6 +82,8 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
     fragsC[i] = d_C[i + id * 4];
   }
 
+  int meta = 0xCCCC;
+
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
@@ -98,9 +100,9 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
     // assembly mma
     asm volatile(
         "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
-        "{%0,%1}, {%2,%3}, {%4,%6}, {%0,%1}, 0xC, 0x0;\n"
+        "{%0,%1}, {%2,%3}, {%4,%5}, {%0,%1}, %6, 0x0;\n"
         : "+r"(C[0]), "+r"(C[1])
-        : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]));
+        : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]), "r"(meta));
     //__syncwarp();
   }
   // stop timing
