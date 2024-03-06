@@ -8,21 +8,17 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
-#include <thread>
-#include <vector>
-
-#include "../../../nvml_tools.cu"
 
 #define M 16
 #define N 8
-#define K 16
+#define K 8
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2  // sparse matrix
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768 * 32
+#define ITERATIONS 32768
 
 #define DEBUG
 #ifdef DEBUG
@@ -55,7 +51,6 @@ void printCudaInfo() {
     printf("   Global mem: %.0f MB\n",
            static_cast<float>(deviceProps.totalGlobalMem) / (1024 * 1024));
     printf("   CUDA Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
-    printf("   Clock:      %.2f MHz\n", (deviceProps.clockRate / 1000.0f));
   }
   printf("---------------------------------------------------------\n");
 }
@@ -73,16 +68,16 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
 
   // create registers for threads
   half fragsA[4];
-  half fragsB[4];
+  half fragsB[2];
   half fragsC[4];
 
   for (int i = 0; i < 4; i++) {
     fragsA[i] = d_A[i + id * 4];
-    fragsB[i] = d_B[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
   }
-
-  int meta = 0xCCCC;
+  for (int i = 0; i < 2; i++) {
+    fragsB[i] = d_B[i + id * 2];
+  }
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
@@ -99,10 +94,10 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
-        "{%0,%1}, {%2,%3}, {%4,%5}, {%0,%1}, %6, 0x0;\n"
+        "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 "
+        "{%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
         : "+r"(C[0]), "+r"(C[1])
-        : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]), "r"(meta));
+        : "r"(A[0]), "r"(A[1]), "r"(B[0]));
     //__syncwarp();
   }
   // stop timing
@@ -122,17 +117,6 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
 // D = A*B + D
 int main() {
   // Code to be executed on the CPU
-
-  // start nvml
-  // thread to measure power configuration
-  std::thread measuring_thread;
-  monitor_args thread_args;
-  thread_args.powerArray = std::vector<int>();
-  thread_args.clockArray = std::vector<int>();
-  thread_args.flag = 0;
-
-  init_nvml(&thread_args, &measuring_thread);
-  cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info
   printCudaInfo();
@@ -196,15 +180,12 @@ int main() {
   cudaCheckError(cudaMalloc((void **)&d_timeStop,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(uint64_t)));
 
-  thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_A, d_B, d_C, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
-  thread_args.flag = 0;
-  stop_nvml(&measuring_thread, thread_args.powerArray, thread_args.clockArray);
 
   // Copy device memory to host
   cudaCheckError(cudaMemcpy(startClk, d_startClk,
@@ -237,19 +218,16 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency "
+  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout
-      << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
-      << fma << "\n";
+  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  FMA Count "
+            << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
-
-  std::cout << "---------------------------------------------------------\n";
 
   // Free device memory
   cudaCheckError(cudaFree(d_A));
