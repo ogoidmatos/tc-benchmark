@@ -15,7 +15,7 @@
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2  // sparse matrix
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
@@ -67,17 +67,19 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  half fragsA[4];
+  half fragsA[2];
   half fragsB[2];
   half fragsC[4];
 
   for (int i = 0; i < 4; i++) {
-    fragsA[i] = d_A[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
   }
   for (int i = 0; i < 2; i++) {
+    fragsA[i] = d_A[i + id * 2];
     fragsB[i] = d_B[i + id * 2];
   }
+
+  int meta = 0xCCCC;
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
@@ -94,10 +96,10 @@ __global__ void benchmark_alt(half *d_A, half *d_B, half *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 "
-        "{%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
+        "mma.sp.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 "
+        "{%0,%1}, {%2}, {%3}, {%0,%1}, %4, 0x0;\n"
         : "+r"(C[0]), "+r"(C[1])
-        : "r"(A[0]), "r"(A[1]), "r"(B[0]));
+        : "r"(A[0]), "r"(B[0]), "r"(meta));
     //__syncwarp();
   }
   // stop timing
@@ -218,9 +220,9 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  latency "
+  std::cout << "mma.sp.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  FMA Count "
+  std::cout << "mma.sp.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
