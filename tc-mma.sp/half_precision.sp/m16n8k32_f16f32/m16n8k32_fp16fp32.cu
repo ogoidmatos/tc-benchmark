@@ -11,7 +11,7 @@
 
 #define M 16
 #define N 8
-#define K 8
+#define K 32
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
@@ -147,7 +147,8 @@ int main() {
   }
 
   // Allocate device memory
-  float *d_A, *d_B, *d_C;
+  half *d_A, *d_B;
+  float *d_C;
   cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(half)));
   cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(half)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(float)));
