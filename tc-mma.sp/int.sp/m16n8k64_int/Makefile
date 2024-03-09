@@ -1,6 +1,6 @@
 EXECUTABLE := mma
 
-CU_FILES   := m16n8k16_int.cu
+CU_FILES   := m16n8k64_int.cu
 
 CU_DEPS    :=
 
@@ -20,7 +20,7 @@ NVCC=nvcc
 NVCCFLAGS= -Xptxas -dlcm=cv -Xptxas -dscm=wt -gencode=arch=compute_86,code=\"sm_86,compute_86\"
 
 
-OBJS= $(OBJDIR)/m16n8k16_int.o
+OBJS= $(OBJDIR)/m16n8k64_int.o
 
 
 .PHONY: dirs clean
