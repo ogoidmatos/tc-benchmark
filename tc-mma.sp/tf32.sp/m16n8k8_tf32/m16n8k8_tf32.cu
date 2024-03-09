@@ -15,7 +15,7 @@
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
@@ -67,17 +67,19 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  float fragsA[4];
+  float fragsA[2];
   float fragsB[2];
   float fragsC[4];
 
   for (int i = 0; i < 4; i++) {
-    fragsA[i] = d_A[i + id * 4];
     fragsC[i] = d_C[i + id * 4];
   }
   for (int i = 0; i < 2; i++) {
+    fragsA[i] = d_A[i + id * 2];
     fragsB[i] = d_B[i + id * 2];
   }
+
+  int meta = 0xCCCC;
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
@@ -94,10 +96,10 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+        "mma.sp.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+        "{%0,%1,%2,%3}, {%4,%5}, {%6,%7}, {%0,%1,%2,%3}, %8, 0x0;\n"
         : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
-        : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+        : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]), "r"(meta));
     //__syncwarp();
   }
   // stop timing
@@ -218,10 +220,11 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  latency "
+  std::cout << "mma.sp.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  FMA Count "
-            << fma << "\n";
+  std::cout
+      << "mma.sp.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32  FMA Count "
+      << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
