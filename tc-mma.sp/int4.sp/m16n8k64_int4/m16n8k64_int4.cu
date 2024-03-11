@@ -15,7 +15,7 @@
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768 / 4  // divided by 4 to reduce the ammount of memory
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
