@@ -9,13 +9,13 @@
 #include <cstdlib>
 #include <iostream>
 
-#define M 8
+#define M 16
 #define N 8
-#define K 32
+#define K 128
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
+#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
@@ -67,15 +67,17 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   uint64_t time_stop = 0;
 
   // create registers for threads
-  int fragsA[1];
-  int fragsB[1];
-  int fragsC[2];
+  int fragsA[4];
+  int fragsB[4];
+  int fragsC[4];
 
-  for (int i = 0; i < 2; i++) {
-    fragsC[i] = d_C[i + id * 2];
+  for (int i = 0; i < 4; i++) {
+    fragsC[i] = d_C[i + id * 4];
+    fragsA[i] = d_A[i + id * 4];
+    fragsB[i] = d_A[i + id * 4];
   }
-  fragsA[0] = d_A[id];
-  fragsB[0] = d_B[id];
+
+  int meta = 0xCCCC;
 
   // uint32_t const *A = reinterpret_cast<uint32_t const *>(
   //     &fragsA[0]);  // change from half to bit 32 which is what the mma takes
@@ -92,18 +94,21 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m8n8k32.row.col.s32.s4.s4.s32 "
-        "{%0,%1}, {%2}, {%3}, {%0,%1};\n"
-        : "+r"(fragsC[0]), "+r"(fragsC[1])
-        : "r"(fragsA[0]), "r"(fragsB[0]));
+        "mma.sp.sync.aligned.m16n8k128.row.col.s32.s4.s4.s32 "
+        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9,%10,%11}, {%0,%1,%2,%3}, %12, "
+        "0x0;\n"
+        : "+r"(fragsC[0]), "+r"(fragsC[1]), "+r"(fragsC[2]), "+r"(fragsC[3])
+        : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsA[2]), "r"(fragsA[3]),
+          "r"(fragsB[0]), "r"(fragsB[1]), "r"(fragsB[2]), "r"(fragsB[3]),
+          "r"(meta));
     //__syncwarp();
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
 
-  for (int i = 0; i < 2; i++) {
-    d_C[i + id * 2] = fragsC[i];
+  for (int i = 0; i < 4; i++) {
+    d_C[i + id * 4] = fragsC[i];
   }
 
   d_startClk[id] = start;
@@ -131,13 +136,13 @@ int main() {
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
-    h_A[i] = 0.0f;
+    h_A[i] = 0;
   }
   for (int i = 0; i < dimB; i++) {
-    h_B[i] = 0.0f;
+    h_B[i] = 0;
   }
   for (int i = 0; i < dimC; i++) {
-    h_C[i] = 0.0f;
+    h_C[i] = 0;
   }
 
   // Allocate device memory
@@ -216,9 +221,9 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32  latency "
+  std::cout << "mma.sp.sync.aligned.m16n8k128.row.col.s32.s4.s4.s32  latency "
             << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32  FMA Count "
+  std::cout << "mma.sp.sync.aligned.m16n8k128.row.col.s32.s4.s4.s32  FMA Count "
             << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
