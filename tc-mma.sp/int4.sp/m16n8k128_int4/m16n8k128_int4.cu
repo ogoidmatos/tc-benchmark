@@ -14,8 +14,8 @@
 #define K 128
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768 / 4
-#define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2
+#define NUM_BLOCKS 32768
+#define A_SIZE ((uint64_t)M * K * (THREADS_PER_BLOCK / 32) * NUM_BLOCKS / 2)
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
@@ -56,7 +56,7 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
+__global__ void benchmark_alt(uint8_t *d_A, uint8_t *d_B, int *d_C,
                               uint64_t *d_startClk, uint64_t *d_stopClk,
                               uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -125,13 +125,13 @@ int main() {
   printCudaInfo();
 
   // Calculate matrix dimensions
-  int dimA = A_SIZE;
+  uint64_t dimA = A_SIZE;
   int dimB = B_SIZE;
   int dimC = C_SIZE;  // dimC is the same as dimD
 
   // Allocate host memory
-  int *h_A = (int *)malloc(dimA * sizeof(int));
-  int *h_B = (int *)malloc(dimB * sizeof(int));
+  uint8_t *h_A = (uint8_t *)malloc(dimA * sizeof(uint8_t));
+  uint8_t *h_B = (uint8_t *)malloc(dimB * sizeof(uint8_t));
   int *h_C = (int *)malloc(dimC * sizeof(int));
 
   // Initialize host memory
@@ -146,16 +146,17 @@ int main() {
   }
 
   // Allocate device memory
-  int *d_A, *d_B, *d_C;
-  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(int)));
-  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(int)));
+  uint8_t *d_A, *d_B;
+  int *d_C;
+  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(uint8_t)));
+  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(uint8_t)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(int)));
 
   // Copy host memory to device
   cudaCheckError(
-      cudaMemcpy(d_A, h_A, dimA * sizeof(int), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_A, h_A, dimA * sizeof(uint8_t), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_B, h_B, dimB * sizeof(int), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_B, h_B, dimB * sizeof(uint8_t), cudaMemcpyHostToDevice));
   cudaCheckError(
       cudaMemcpy(d_C, h_C, dimC * sizeof(int), cudaMemcpyHostToDevice));
 
