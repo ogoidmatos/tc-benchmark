@@ -9,11 +9,11 @@
 #include <iostream>
 #include <vector>
 
-#include "../../../nvml_tools.cu"
+#include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
-#define ITERATIONS 32768
+#define NUM_BLOCKS 1
+#define ITERATIONS 32768L
 #define SHARED_MEM_SIZE (32 * 1024 / 4)
 
 #define DEBUG
@@ -53,8 +53,9 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(uint64_t *d_startClk, uint64_t *d_stopClk,
-                              uint64_t *d_timeStart, uint64_t *d_timeStop) {
+__global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
+                              uint64_t *d_stopClk, uint64_t *d_timeStart,
+                              uint64_t *d_timeStop) {
   // Code to be executed on the GPU
   int id = blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t start = 0;
@@ -62,46 +63,49 @@ __global__ void benchmark_alt(uint64_t *d_startClk, uint64_t *d_stopClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  __shared__ int s[SHARED_MEM_SIZE];  // static shared memory
+  // __shared__ unsigned s[SHARED_MEM_SIZE];  // static shared memory
 
-  // one thread to initialize the pointer-chasing array
-  if (id == 0) {
-    for (uint32_t i = 0; i < SHARED_MEM_SIZE; i++) s[i] = (i) * 16 % 2048;
-  }
+  // // one thread to initialize the pointer-chasing array
+  // if (id == 0) {
+  //   for (int i = 0; i < SHARED_MEM_SIZE; i++) s[i] = i * 16;
+  // }
+  // // synchronize threads
+  // asm volatile("bar.sync 0;");
+
+  // unsigned addr =
+  //     static_cast<unsigned>(__cvta_generic_to_shared(&s[threadIdx.x * 4]));
+  // https://stackoverflow.com/questions/76992939/confusion-about-cvta-generic-to-shared
+  int x = 0;
   // synchronize threads
   asm volatile("bar.sync 0;");
 
-  if (id == 0) {
-    for (int i = 0; i < SHARED_MEM_SIZE; i++) {
-      printf("s[%d] = %d \t", i, s[i]);
-    }
-    printf("\n");
+  // start timing
+  asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
+  asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
+
+  for (int i = 0; i < ITERATIONS; i++) {
+    // printf("addr = %d\n", addr);
+    //  assembly mma
+    asm volatile("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%1];"
+                 : "=r"(x)
+                 : "r"(x));
   }
-
-  // synchronize threads
-  // asm volatile("bar.sync 0;");
-
-  // // start timing
-  // asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
-  // asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
-
+  // printf("x = %d\n", x);
   // for (int i = 0; i < ITERATIONS; i++) {
-  //   // assembly mma
-  //   asm volatile(
-  //       "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
-  //       "{%0,%1}, {%2,%3}, {%4,%5}, {%0,%1}, %6, 0x0;\n"
-  //       : "+r"(C[0]), "+r"(C[1])
-  //       : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(B[1]), "r"(meta));
-  //   //__syncwarp();
+  //   //  assembly mma
+  //   if (id == 0) {
+  //     printf("addr s = %p\n", &s[threadIdx.x * 4]);
+  //   }
   // }
   // // stop timing
-  // asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
-  // asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
+  asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
+  asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
 
   d_startClk[id] = start;
   d_stopClk[id] = stop;
   d_timeStart[id] = time_start;
   d_timeStop[id] = time_stop;
+  d_X[id] = x;
 }
 
 // D = A*B + D
@@ -121,6 +125,14 @@ int main() {
 
   // Print CUDA info
   printCudaInfo();
+
+  int *h_X = (int *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int));
+  int *d_X;
+  cudaCheckError(
+      cudaMalloc((void **)&d_X, NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int)));
+  cudaCheckError(cudaMemcpy(d_X, h_X,
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int),
+                            cudaMemcpyHostToDevice));
 
   // // Allocate device memory
   // half *d_A, *d_B, *d_C;
@@ -162,7 +174,7 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_startClk, d_stopClk,
+  benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_startClk, d_stopClk,
                                                    d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
@@ -195,25 +207,31 @@ int main() {
 
   total_time = total_time / 1e9;
 
-  uint64_t fma =
-      (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) * NUM_BLOCKS;
-  float bw = (float)fma / (float)total_clk;
+  long bytes = 8 * 8 * 2 * ITERATIONS * (THREADS_PER_BLOCK / 32) * NUM_BLOCKS;
 
-  double FLOPS = fma * 2 / total_time / 1e12;
+  // uint64_t fma =
+  //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
+  //     NUM_BLOCKS;
+  float bw = (float)bytes / (float)total_clk;
 
-  std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency "
-            << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout
-      << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
-      << fma << "\n";
+  // double FLOPS = fma * 2 / total_time / 1e12;
+
+  // std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency
+  // "
+  //           << (float)total_clk / (float)ITERATIONS << " cycles\n";
+  // std::cout
+  //     << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
+  //     << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
-  std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
+  std::cout << "Average Clock Frequency = " << total_clk / total_time / 1e6
+            << " (MHz)\n";
+  // std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
 
-  std::cout << "---------------------------------------------------------\n";
+  // std::cout << "---------------------------------------------------------\n";
 
   // Free device memory
 

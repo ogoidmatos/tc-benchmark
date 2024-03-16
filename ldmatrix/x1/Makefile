@@ -1,6 +1,6 @@
 EXECUTABLE := mma
 
-CU_FILES   := ldmatrix_x1.cu ../../../nvml_tools.cu
+CU_FILES   := ldmatrix_x1.cu ../../nvml_tools.cu
 
 CU_DEPS    :=
 
