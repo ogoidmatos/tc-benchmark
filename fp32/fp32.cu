@@ -111,7 +111,7 @@ int main() {
   // Print CUDA info
   printCudaInfo();
 
-  float *h_X = (int *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
+  float *h_X = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
   float *d_X;
   cudaCheckError(cudaMalloc((void **)&d_X,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
