@@ -86,9 +86,8 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   for (int i = 0; i < ITERATIONS; i++) {
     // printf("addr = %d\n", addr);
     //  assembly mma
-    asm volatile("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%1];"
-                 : "=r"(x)
-                 : "r"(x));
+    asm volatile("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%0];"
+                 : "+r"(x));
   }
   // printf("x = %d\n", x);
   // for (int i = 0; i < ITERATIONS; i++) {

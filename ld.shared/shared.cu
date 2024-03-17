@@ -9,7 +9,7 @@
 #include <iostream>
 #include <vector>
 
-#include "../../nvml_tools.cu"
+#include "../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 1
@@ -78,6 +78,7 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
+#pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
     //  assembly mma
     x = s[threadIdx.x];
@@ -180,8 +181,8 @@ int main() {
 
   total_time = total_time / 1e9;
 
-  long bytes = 4 * 2 * ITERATIONS * THREADS_PER_BLOCK *
-               NUM_BLOCKS;  // 4 bytes for int, 2 for read and write
+  long bytes = sizeof(int) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+               NUM_BLOCKS;  // 2 for read and write
 
   // uint64_t fma =
   //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
