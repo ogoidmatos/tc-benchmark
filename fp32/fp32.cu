@@ -12,7 +12,7 @@
 #include "../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768L
 #define ITERATIONS 32768L
 
 #define DEBUG
@@ -52,7 +52,6 @@ void printCudaInfo() {
 }
 
 // Kernel function
-template <class T>
 __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
                               uint64_t *d_stopClk, uint64_t *d_timeStart,
                               uint64_t *d_timeStop) {
@@ -63,10 +62,10 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  T a = 1;
-  T b = 2;
-  T c = 3;
-  T d = 4;
+  int a = id;
+  int b = a + 1;
+  int c = b + 1;
+  int d = c + 1;
   // synchronize threads
   asm volatile("bar.sync 0;");
 
@@ -74,7 +73,7 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
-#pragma unroll
+  // #pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
     //  assembly mma
     a = a * a + b;
@@ -146,8 +145,8 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<int><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
-      d_X, d_startClk, d_stopClk, d_timeStart, d_timeStop);
+  benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_startClk, d_stopClk,
+                                                   d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
