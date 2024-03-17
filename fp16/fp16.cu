@@ -1,4 +1,5 @@
 #include <cuda.h>
+#include <cuda_fp16.h>  // __half
 #include <cuda_runtime.h>
 #include <driver_functions.h>
 #include <mma.h>
@@ -62,10 +63,11 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  half a = (half)id;
-  half b = a + 1.0;
-  half c = b + 1.0;
-  half d = c + 1.0;
+  half a = __float2half(id);
+  half b = __hadd(a, __float2half(1.0f));
+  half c = __hadd(b, __float2half(1.0f));
+  half d = __hadd(c, __float2half(1.0f));
+
   // synchronize threads
   asm volatile("bar.sync 0;");
 
@@ -76,10 +78,10 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   // #pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
     //  assembly mma
-    a = a * a + b;
-    b = b * b + c;
-    c = c * c + d;
-    d = d * d + a;
+    a = __hfma(a, a, b);
+    b = __hfma(b, b, c);
+    c = __hfma(c, c, d);
+    d = __hfma(d, d, a);
   }
 
   // // stop timing
@@ -90,7 +92,7 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   d_stopClk[id] = stop;
   d_timeStart[id] = time_start;
   d_timeStop[id] = time_stop;
-  d_X[id] = (float)d;
+  d_X[id] = __half2float(d);
 }
 
 // D = A*B + D

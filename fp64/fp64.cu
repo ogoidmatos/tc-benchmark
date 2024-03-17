@@ -73,7 +73,7 @@ __global__ void benchmark_alt(double *d_X, uint64_t *d_startClk,
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
-  // #pragma unroll
+#pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
     //  assembly mma
     a = a * a + b;
