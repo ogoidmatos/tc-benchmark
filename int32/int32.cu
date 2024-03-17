@@ -52,7 +52,7 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
+__global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
                               uint64_t *d_stopClk, uint64_t *d_timeStart,
                               uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -62,10 +62,10 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  float a = (float)id;
-  float b = a + 1.0;
-  float c = b + 1.0;
-  float d = c + 1.0;
+  int a = id;
+  int b = a + 1;
+  int c = b + 1;
+  int d = c + 1;
   // synchronize threads
   asm volatile("bar.sync 0;");
 
@@ -111,12 +111,12 @@ int main() {
   // Print CUDA info
   printCudaInfo();
 
-  float *h_X = (int *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
-  float *d_X;
-  cudaCheckError(cudaMalloc((void **)&d_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
+  int *h_X = (int *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int));
+  int *d_X;
+  cudaCheckError(
+      cudaMalloc((void **)&d_X, NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int)));
   cudaCheckError(cudaMemcpy(d_X, h_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(int),
                             cudaMemcpyHostToDevice));
 
   // handle clock
