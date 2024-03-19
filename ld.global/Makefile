@@ -17,7 +17,7 @@ CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L/usr/local/cuda/lib64/ -lnvidia-ml -lcudart
 NVCC=nvcc
-NVCCFLAGS= -Xptxas -dlcm=cg -Xptxas -dscm=cg -gencode=arch=compute_86,code=\"sm_86,compute_86\" -lnvidia-ml -std=c++11
+NVCCFLAGS= -Xptxas -dlcm=cv -Xptxas -dscm=wt -gencode=arch=compute_86,code=\"sm_86,compute_86\" -lnvidia-ml -std=c++11
 
 
 OBJS= $(OBJDIR)/global_read_write.o

@@ -12,9 +12,10 @@
 #include "../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768L
 #define ITERATIONS 32768L
-#define STRIDE 32768L
+// stride required to force all the data to come from DRAM
+#define STRIDE 32768 * 2L
 
 #define DEBUG
 #ifdef DEBUG
