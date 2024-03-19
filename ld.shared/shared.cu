@@ -12,7 +12,7 @@
 #include "../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768L
 #define ITERATIONS 32768L
 
 #define DEBUG
@@ -180,9 +180,9 @@ int main() {
   // uint64_t fma =
   //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
   //     NUM_BLOCKS;
-  float bw = (float)bytes / (float)total_clk;
-
-  // double FLOPS = fma * 2 / total_time / 1e12;
+  int sm = (NUM_BLOCKS > 68) ? 68 : NUM_BLOCKS;
+  float bw_clk = (float)bytes / (float)total_clk / sm;
+  float bw = (float)bytes / (float)total_time / 1e9;
 
   // std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency
   // "
@@ -190,7 +190,8 @@ int main() {
   // std::cout
   //     << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
   //     << fma << "\n";
-  std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  std::cout << "Bytes per SM = " << bw_clk << " (Bytes/clk/SM)\n";
+  std::cout << "Bandwidth = " << bw << " (GB/s)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
