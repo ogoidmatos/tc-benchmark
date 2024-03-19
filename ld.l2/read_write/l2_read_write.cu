@@ -12,7 +12,7 @@
 #include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768
 #define ITERATIONS 32768L
 
 #define DEBUG
