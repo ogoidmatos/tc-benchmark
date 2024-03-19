@@ -65,14 +65,7 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
 
   __shared__ T s[THREADS_PER_BLOCK];  // static shared memory
 
-  // // one thread to initialize the pointer-chasing array
-  if (threadIdx.x == 0) {
-    for (int i = 0; i < THREADS_PER_BLOCK; i++) s[i] = i;
-  }
-
   T x;
-  // synchronize threads
-  asm volatile("bar.sync 0;");
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
