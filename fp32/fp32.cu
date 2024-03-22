@@ -13,7 +13,7 @@
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768L
-#define ITERATIONS 32768L
+#define ITERATIONS 32768L * 6
 
 #define DEBUG
 #ifdef DEBUG
