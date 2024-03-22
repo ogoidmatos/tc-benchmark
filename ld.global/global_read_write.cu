@@ -15,7 +15,7 @@
 #define NUM_BLOCKS 32768L
 #define ITERATIONS 32768L
 // stride required to force all the data to come from DRAM
-#define STRIDE 32768 * 2L
+#define STRIDE 32768 * 4L
 
 #define DEBUG
 #ifdef DEBUG
