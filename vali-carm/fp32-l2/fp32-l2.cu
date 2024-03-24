@@ -9,11 +9,14 @@
 #include <iostream>
 #include <vector>
 
-#include "../nvml_tools.cu"
+#include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768L
-#define ITERATIONS 32768L * 6
+#define ITERATIONS 32768L
+#define MEM 2
+#define FLOP 256
+#define AI ((float)FLOP / MEM)
 
 #define DEBUG
 #ifdef DEBUG
@@ -52,7 +55,8 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
+template <class T>
+__global__ void benchmark_alt(T *d_X, T *d_Y, uint64_t *d_startClk,
                               uint64_t *d_stopClk, uint64_t *d_timeStart,
                               uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -62,12 +66,12 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  float a = (float)id;
-  float b = a + 1.0;
-  float c = b + 1.0;
-  float d = c + 1.0;
+  T a = (T)id;
+  T b = a + 1;
+  T c = b + 1;
+  T d = c + 1;
   // synchronize threads
-  asm volatile("bar.sync 0;");
+  // asm volatile("bar.sync 0;");
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
@@ -75,11 +79,19 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
 
   // #pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
-    //  assembly mma
-    a = a * a + b;
-    b = b * b + c;
-    c = c * c + d;
-    d = d * d + a;
+//  assembly mma
+#pragma unroll
+    for (j = 0; j < MEM; j++) {
+      a = d_X[id];
+      d_Y[id] = a;
+    }
+#pragma unroll
+    for (j = 0; j < FLOP; j++) {
+      a = a * a + b;
+      b = b * b + c;
+      c = c * c + d;
+      d = d * d + a;
+    }
   }
 
   // // stop timing
@@ -112,10 +124,16 @@ int main() {
   printCudaInfo();
 
   float *h_X = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
-  float *d_X;
+  float *h_Y = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
+  float *d_X, *d_Y;
   cudaCheckError(cudaMalloc((void **)&d_X,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
   cudaCheckError(cudaMemcpy(d_X, h_X,
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
+                            cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMalloc((void **)&d_Y,
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
+  cudaCheckError(cudaMemcpy(d_Y, h_Y,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
                             cudaMemcpyHostToDevice));
 
@@ -145,8 +163,8 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_startClk, d_stopClk,
-                                                   d_timeStart, d_timeStop);
+  benchmark_alt<float><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
+      d_X, d_Y, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
@@ -178,30 +196,28 @@ int main() {
 
   total_time = total_time / 1e9;
 
-  long fma = 4 * ITERATIONS * THREADS_PER_BLOCK *
-             NUM_BLOCKS;  // 4 fma instructions, 4*2 flops
+  long fma = 4 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
+             FLOP;  // 4 fma instructions, 4*2 flops
 
-  // uint64_t fma =
-  //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
-  //     NUM_BLOCKS;
-  float bw = (float)fma / (float)total_clk;
+  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
+               MEM;  // 2 for read and write
+
+  // float fma_bw = (float)fma / (float)total_clk;
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  // std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency
-  // "
-  //           << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  // std::cout
-  //     << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
-  //     << fma << "\n";
-  std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  double bw = (float)bytes / (float)total_time / 1e9;
+
+  // std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  std::cout << "Bandwidth = " << bw << " (GB/s)\n";
+  std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
+  std::cout << "AI = " << AI << " (FLOP/byte)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "Average Clock Frequency = " << total_clk / total_time / 1e6
             << " (MHz)\n";
-  std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
 
   // std::cout << "---------------------------------------------------------\n";
 
@@ -212,6 +228,7 @@ int main() {
   cudaCheckError(cudaFree(d_timeStart));
   cudaCheckError(cudaFree(d_timeStop));
   cudaCheckError(cudaFree(d_X));
+  cudaCheckError(cudaFree(d_Y));
 
   // Free host memory
 
@@ -220,6 +237,7 @@ int main() {
   free(timeStart);
   free(stopStop);
   free(h_X);
+  free(h_Y);
 
   return 0;
 }

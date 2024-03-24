@@ -194,8 +194,8 @@ int main() {
   long fma = 4 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
              FLOP;  // 4 fma instructions, 4*2 flops
 
-  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK *
-               NUM_BLOCKS;  // 2 for read and write
+  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
+               MEM;  // 2 for read and write
 
   // float fma_bw = (float)fma / (float)total_clk;
 
