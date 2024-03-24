@@ -11,10 +11,10 @@
 
 #define M 16
 #define N 8
-#define K 32
+#define K 256
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768
+#define NUM_BLOCKS 32768L / 4
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
@@ -94,8 +94,8 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
   for (int i = 0; i < ITERATIONS; i++) {
     // assembly mma
     asm volatile(
-        "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 "
-        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%6,%8}, {%0,%1,%2,%3};\n"
+        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc "
+        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
         : "+r"(fragsC[0]), "+r"(fragsC[1]), "+r"(fragsC[2]), "+r"(fragsC[3])
         : "r"(fragsA[0]), "r"(fragsA[1]), "r"(fragsA[2]), "r"(fragsA[3]),
           "r"(fragsB[0]), "r"(fragsB[1]));
@@ -123,7 +123,7 @@ int main() {
   printCudaInfo();
 
   // Calculate matrix dimensions
-  int dimA = A_SIZE;
+  long dimA = A_SIZE;
   int dimB = B_SIZE;
   int dimC = C_SIZE;  // dimC is the same as dimD
 
@@ -220,10 +220,12 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32  latency "
-            << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  std::cout << "mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32  FMA Count "
-            << fma << "\n";
+  std::cout
+      << "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc  latency "
+      << (float)total_clk / (float)ITERATIONS << " cycles\n";
+  std::cout
+      << "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc  FMA Count "
+      << fma << "\n";
   std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
