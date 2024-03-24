@@ -69,7 +69,7 @@ void monitoring(monitor_args* args) {
 }
 
 void init_nvml(monitor_args* thread_args, std::thread* measuring_thread,
-               bool verbose == true) {
+               bool verbose = true) {
   nvmlReturn_t result;
   result = nvmlInit();
   if (NVML_SUCCESS != result) {
