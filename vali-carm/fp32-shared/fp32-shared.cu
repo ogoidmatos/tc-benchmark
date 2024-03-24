@@ -12,8 +12,11 @@
 #include "../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768L
-#define ITERATIONS 32768L * 6
+#define NUM_BLOCKS 1
+#define ITERATIONS 32768L
+#define MEM 2
+#define FLOP 4
+#define AI FLOP / MEM
 
 #define DEBUG
 #ifdef DEBUG
@@ -52,9 +55,9 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
-                              uint64_t *d_stopClk, uint64_t *d_timeStart,
-                              uint64_t *d_timeStop) {
+template <class T>
+__global__ void benchmark_alt(T *d_X, uint64_t *d_startClk, uint64_t *d_stopClk,
+                              uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
   int id = blockIdx.x * blockDim.x + threadIdx.x;
   uint64_t start = 0;
@@ -62,12 +65,15 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  float a = (float)id;
-  float b = a + 1.0;
-  float c = b + 1.0;
-  float d = c + 1.0;
+  __shared__ T s[THREADS_PER_BLOCK];  // static shared memory
+
+  T a = (T)id;
+  T b = a + 1;
+  T c = b + 1;
+  T d = c + 1;
+
   // synchronize threads
-  asm volatile("bar.sync 0;");
+  // asm volatile("bar.sync 0;");
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
@@ -75,11 +81,18 @@ __global__ void benchmark_alt(float *d_X, uint64_t *d_startClk,
 
   // #pragma unroll
   for (int i = 0; i < ITERATIONS; i++) {
-    //  assembly mma
-    a = a * a + b;
-    b = b * b + c;
-    c = c * c + d;
-    d = d * d + a;
+#pragma unroll
+    for (int j = 0; j < MEM; j++) {
+      a = s[threadIdx.x];
+      s[THREADS_PER_BLOCK - threadIdx.x - 1] = a;
+    }
+#pragma unroll
+    for (int j = 0; j < FLOP; j++) {
+      a = a * a + b;
+      b = b * b + c;
+      c = c * c + d;
+      d = d * d + a;
+    }
   }
 
   // // stop timing
@@ -145,8 +158,8 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(d_X, d_startClk, d_stopClk,
-                                                   d_timeStart, d_timeStop);
+  benchmark_alt<float><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
+      d_X, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
@@ -178,30 +191,28 @@ int main() {
 
   total_time = total_time / 1e9;
 
-  long fma = 4 * ITERATIONS * THREADS_PER_BLOCK *
-             NUM_BLOCKS;  // 4 fma instructions, 4*2 flops
+  long fma = 4 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
+             FLOP;  // 4 fma instructions, 4*2 flops
 
-  // uint64_t fma =
-  //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
-  //     NUM_BLOCKS;
-  float bw = (float)fma / (float)total_clk;
+  long bytes = sizeof(long) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+               NUM_BLOCKS;  // 2 for read and write
+
+  // float fma_bw = (float)fma / (float)total_clk;
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  // std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency
-  // "
-  //           << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  // std::cout
-  //     << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
-  //     << fma << "\n";
-  std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  double bw = (float)bytes / (float)total_time / 1e9;
+
+  // std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  std::cout << "Bandwidth = " << bw << " (GB/s)\n";
+  std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
+  std::cout << "AI = " << AI << " (FLOP/byte)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "Average Clock Frequency = " << total_clk / total_time / 1e6
             << " (MHz)\n";
-  std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
 
   // std::cout << "---------------------------------------------------------\n";
 
