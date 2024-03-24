@@ -14,6 +14,7 @@ typedef struct {
   std::vector<int> clockArray;
   nvmlDevice_t device;
   int flag;
+  bool verbose;
 } monitor_args;
 
 void monitoring(monitor_args* args) {
@@ -57,14 +58,18 @@ void monitoring(monitor_args* args) {
 
     (args->powerArray).push_back(power / 1000);
     (args->clockArray).push_back(clockSM);
-    printf("Power: %d W  ", power / 1000);
-    printf("Clock: %d MHz\n", clockSM);
+    if (args->verbose) {
+      printf("Power: %d W  ", power / 1000);
+      printf("Clock: %d MHz\n", clockSM);
+    }
+
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   return;
 }
 
-void init_nvml(monitor_args* thread_args, std::thread* measuring_thread) {
+void init_nvml(monitor_args* thread_args, std::thread* measuring_thread,
+               bool verbose == true) {
   nvmlReturn_t result;
   result = nvmlInit();
   if (NVML_SUCCESS != result) {
@@ -80,6 +85,7 @@ void init_nvml(monitor_args* thread_args, std::thread* measuring_thread) {
   }
 
   thread_args->device = device;
+  thread_args->verbose = verbose;
 
   *measuring_thread = std::thread(monitoring, thread_args);
   return;
