@@ -102,7 +102,7 @@ int main() {
   thread_args.clockArray = std::vector<int>();
   thread_args.flag = 0;
 
-  init_nvml(&thread_args, &measuring_thread);
+  init_nvml(&thread_args, &measuring_thread, false);
   cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info
