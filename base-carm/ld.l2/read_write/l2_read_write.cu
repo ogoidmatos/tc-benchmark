@@ -9,7 +9,7 @@
 #include <iostream>
 #include <vector>
 
-#include "../../nvml_tools.cu"
+#include "../../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768

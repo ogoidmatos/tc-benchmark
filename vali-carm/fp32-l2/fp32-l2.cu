@@ -81,12 +81,12 @@ __global__ void benchmark_alt(T *d_X, T *d_Y, uint64_t *d_startClk,
   for (int i = 0; i < ITERATIONS; i++) {
 //  assembly mma
 #pragma unroll
-    for (j = 0; j < MEM; j++) {
+    for (int j = 0; j < MEM; j++) {
       a = d_X[id];
       d_Y[id] = a;
     }
 #pragma unroll
-    for (j = 0; j < FLOP; j++) {
+    for (int j = 0; j < FLOP; j++) {
       a = a * a + b;
       b = b * b + c;
       c = c * c + d;

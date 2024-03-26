@@ -10,7 +10,7 @@
 #include <iostream>
 #include <vector>
 
-#include "../nvml_tools.cu"
+#include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768L
@@ -107,7 +107,7 @@ int main() {
   thread_args.clockArray = std::vector<int>();
   thread_args.flag = 0;
 
-  init_nvml(&thread_args, &measuring_thread);
+  init_nvml(&thread_args, &measuring_thread, false);
   cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info
