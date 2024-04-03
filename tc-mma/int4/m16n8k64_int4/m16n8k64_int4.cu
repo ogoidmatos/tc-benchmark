@@ -9,16 +9,18 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "../../../nvml_tools.cu"
+
 #define M 16
 #define N 8
 #define K 64
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 32768 / 4  // divided by 4 to reduce the ammount of memory
+#define NUM_BLOCKS 32768
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 * 16
 
 #define DEBUG
 #ifdef DEBUG
@@ -56,7 +58,7 @@ void printCudaInfo() {
 }
 
 // Kernel function
-__global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
+__global__ void benchmark_alt(char *d_A, char *d_B, int *d_C,
                               uint64_t *d_startClk, uint64_t *d_stopClk,
                               uint64_t *d_timeStart, uint64_t *d_timeStop) {
   // Code to be executed on the GPU
@@ -118,6 +120,16 @@ __global__ void benchmark_alt(int *d_A, int *d_B, int *d_C,
 // D = A*B + D
 int main() {
   // Code to be executed on the CPU
+  // start nvml
+  // thread to measure power configuration
+  std::thread measuring_thread;
+  monitor_args thread_args;
+  thread_args.powerArray = std::vector<int>();
+  thread_args.clockArray = std::vector<int>();
+  thread_args.flag = 0;
+
+  init_nvml(&thread_args, &measuring_thread);
+  cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info
   printCudaInfo();
@@ -128,33 +140,33 @@ int main() {
   int dimC = C_SIZE;  // dimC is the same as dimD
 
   // Allocate host memory
-  int *h_A = (int *)malloc(dimA * sizeof(int));
-  int *h_B = (int *)malloc(dimB * sizeof(int));
+  char *h_A = (char *)malloc(dimA * sizeof(char));
+  char *h_B = (char *)malloc(dimB * sizeof(char));
   int *h_C = (int *)malloc(dimC * sizeof(int));
 
   // Initialize host memory
   for (int i = 0; i < dimA; i++) {
-    h_A[i] = 0.0f;
+    h_A[i] = 0;
   }
   for (int i = 0; i < dimB; i++) {
-    h_B[i] = 0.0f;
+    h_B[i] = 0;
   }
   for (int i = 0; i < dimC; i++) {
-    h_C[i] = 0.0f;
+    h_C[i] = 0;
   }
 
   // Allocate device memory
-  int *d_A, *d_B;
+  char *d_A, *d_B;
   int *d_C;
-  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(int)));
-  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(int)));
+  cudaCheckError(cudaMalloc((void **)&d_A, dimA * sizeof(char)));
+  cudaCheckError(cudaMalloc((void **)&d_B, dimB * sizeof(char)));
   cudaCheckError(cudaMalloc((void **)&d_C, dimC * sizeof(int)));
 
   // Copy host memory to device
   cudaCheckError(
-      cudaMemcpy(d_A, h_A, dimA * sizeof(int), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_A, h_A, dimA * sizeof(char), cudaMemcpyHostToDevice));
   cudaCheckError(
-      cudaMemcpy(d_B, h_B, dimB * sizeof(int), cudaMemcpyHostToDevice));
+      cudaMemcpy(d_B, h_B, dimB * sizeof(char), cudaMemcpyHostToDevice));
   cudaCheckError(
       cudaMemcpy(d_C, h_C, dimC * sizeof(int), cudaMemcpyHostToDevice));
 
@@ -182,12 +194,15 @@ int main() {
   cudaCheckError(cudaMalloc((void **)&d_timeStop,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(uint64_t)));
 
+  thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_A, d_B, d_C, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
+  thread_args.flag = 0;
+  stop_nvml(&measuring_thread, thread_args.powerArray, thread_args.clockArray);
 
   // Copy device memory to host
   cudaCheckError(cudaMemcpy(startClk, d_startClk,
