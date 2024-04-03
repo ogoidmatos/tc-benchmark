@@ -56,10 +56,10 @@ void monitoring(monitor_args* args) {
       exit(1);
     }
 
-    (args->powerArray).push_back(power / 1000);
+    (args->powerArray).push_back(power);
     (args->clockArray).push_back(clockSM);
     if (args->verbose) {
-      printf("Power: %d W  ", power / 1000);
+      printf("Power: %.3f W  ", (float)power / 1000.0f);
       printf("Clock: %d MHz\n", clockSM);
     }
 
@@ -104,8 +104,9 @@ void stop_nvml(std::thread* measuring_thread, std::vector<int> powerArray,
   std::ofstream statsFile;
   statsFile.open("power.csv");
   for (int i = 0; i < powerArray.size(); i++) {
-    statsFile << (float)i * 10.0 / 1000 << "; " << powerArray[i] << "; "
-              << clockArray[i] << "; " << std::endl;
+    statsFile << (float)i * 10.0 / 1000 << "; "
+              << (float)powerArray[i] / 1000.0f << "; " << clockArray[i] << "; "
+              << std::endl;
   }
   statsFile.close();
   return;
