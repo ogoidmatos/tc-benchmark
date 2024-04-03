@@ -12,7 +12,7 @@
 #include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768L
 #define ITERATIONS 32768L
 
 #define DEBUG
@@ -141,7 +141,7 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<int><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
+  benchmark_alt<long><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_X, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
@@ -174,7 +174,7 @@ int main() {
 
   total_time = total_time / 1e9;
 
-  long bytes = sizeof(int) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+  long bytes = sizeof(long) * 2 * ITERATIONS * THREADS_PER_BLOCK *
                NUM_BLOCKS;  // 2 for read and write
 
   // uint64_t fma =

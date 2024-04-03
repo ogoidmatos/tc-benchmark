@@ -13,9 +13,9 @@
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768L
-#define ITERATIONS 32768L
-#define MEM 2
-#define FLOP 256
+#define ITERATIONS 32768L / 16
+#define MEM 64
+#define FLOP 2
 #define AI ((float)FLOP / MEM)
 
 #define DEBUG
@@ -65,10 +65,10 @@ __global__ void benchmark_alt(T *d_X, uint64_t *d_startClk, uint64_t *d_stopClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  __shared__ float2 s[THREADS_PER_BLOCK];  // static shared memory
+  __shared__ T s[THREADS_PER_BLOCK];  // static shared memory
 
-  float2 a = make_float2(id, id);
-  T b = a.x + 1;
+  T a = (T)id;
+  T b = a + 1;
   T c = b + 1;
   T d = c + 1;
 
@@ -88,10 +88,10 @@ __global__ void benchmark_alt(T *d_X, uint64_t *d_startClk, uint64_t *d_stopClk,
     }
 #pragma unroll
     for (int j = 0; j < FLOP; j++) {
-      a.x = a.x * a.x + b;
+      a = a * a + b;
       b = b * b + c;
       c = c * c + d;
-      d = d * d + a.y;
+      d = d * d + a;
     }
   }
 
@@ -124,12 +124,13 @@ int main() {
   // Print CUDA info
   printCudaInfo();
 
-  float *h_X = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
-  float *d_X;
+  double *h_X =
+      (double *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(double));
+  double *d_X;
   cudaCheckError(cudaMalloc((void **)&d_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(double)));
   cudaCheckError(cudaMemcpy(d_X, h_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
+                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(double),
                             cudaMemcpyHostToDevice));
 
   // handle clock
@@ -158,7 +159,7 @@ int main() {
 
   thread_args.flag = 1;
   // Launch kernel on the GPU
-  benchmark_alt<float><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
+  benchmark_alt<double><<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_X, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
@@ -194,8 +195,8 @@ int main() {
   long fma = 4 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
              FLOP;  // 4 fma instructions, 4*2 flops
 
-  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
-               MEM;  // 2 for read and write
+  long bytes = sizeof(double) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+               NUM_BLOCKS * MEM;  // 2 for read and write
 
   // float fma_bw = (float)fma / (float)total_clk;
 
