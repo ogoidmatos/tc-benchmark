@@ -103,10 +103,10 @@ void stop_nvml(std::thread* measuring_thread, std::vector<int> powerArray,
   // write results to file
   std::ofstream statsFile;
   statsFile.open("power.csv");
+  statsFile << "Time;Power;Clock; " << std::endl;
   for (int i = 0; i < powerArray.size(); i++) {
-    statsFile << (float)i * 10.0 / 1000 << "; "
-              << (float)powerArray[i] / 1000.0f << "; " << clockArray[i] << "; "
-              << std::endl;
+    statsFile << (float)i * 10.0 / 1000 << ";" << (float)powerArray[i] / 1000.0f
+              << ";" << clockArray[i] << ";" << std::endl;
   }
   statsFile.close();
   return;
