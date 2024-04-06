@@ -16,7 +16,7 @@
 #define ITERATIONS 32768L
 // stride required to force all the data to come from DRAM
 #define STRIDE 32768 * 4L
-#define MEM 2
+#define MEM 1
 #define FLOP 256
 #define AI ((float)FLOP / MEM)
 
@@ -83,8 +83,8 @@ __global__ void benchmark_alt(T *d_X, T *d_Y, uint64_t *d_startClk,
   for (int i = 0; i < ITERATIONS; i += 32) {
 #pragma unroll
     for (int j = 0; j < 32; j++) {
-      x = d_X[id + j * STRIDE];
-      d_Y[id + j * STRIDE] = x;
+      a = d_X[id + j * STRIDE];
+      d_Y[id + j * STRIDE] = a;
 #pragma unroll
       for (int j = 0; j < FLOP; j++) {
         a = a * a + b;
@@ -132,19 +132,23 @@ int main() {
   // Print CUDA info
   printCudaInfo();
 
-  float *h_X = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
-  float *h_Y = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
+  float *h_X = (float *)malloc((NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) *
+                               sizeof(float));
+  float *h_Y = (float *)malloc((NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) *
+                               sizeof(float));
   float *d_X, *d_Y;
-  cudaCheckError(cudaMalloc((void **)&d_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
-  cudaCheckError(cudaMemcpy(d_X, h_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
-                            cudaMemcpyHostToDevice));
-  cudaCheckError(cudaMalloc((void **)&d_Y,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
-  cudaCheckError(cudaMemcpy(d_Y, h_Y,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
-                            cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMalloc(
+      (void **)&d_X,
+      (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float)));
+  cudaCheckError(cudaMemcpy(
+      d_X, h_X, (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float),
+      cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMalloc(
+      (void **)&d_Y,
+      (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float)));
+  cudaCheckError(cudaMemcpy(
+      d_Y, h_Y, (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float),
+      cudaMemcpyHostToDevice));
 
   // handle clock
   uint64_t *startClk =
