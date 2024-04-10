@@ -22,8 +22,8 @@
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
 
-#define MEM 8
-#define FLOP 1
+#define MEM 1
+#define FLOP 2
 #define AI ((float)(M * N * K * 2 * FLOP) / (2 * 4 * MEM))
 
 #define DEBUG
@@ -97,10 +97,12 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
   for (int i = 0; i < ITERATIONS; i++) {
+#pragma unroll
     for (int j = 0; j < MEM; j++) {
       fragsC[0] = s[threadIdx.x];
       s[THREADS_PER_BLOCK - threadIdx.x - 1] = fragsC[0];
     }
+#pragma unroll
     for (int j = 0; j < FLOP; j++) {
       // assembly mma
       asm volatile(
@@ -248,7 +250,7 @@ int main() {
   std::cout << "Bandwidth = " << bw << " (FMA/clk/SM)\n";
 
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
-  std::cout << "AI = " << AI << " (FLOP/byte)\n";
+  std::cout << "AI = " << fma * 2. / bytes << " (FLOP/byte)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 
