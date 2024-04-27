@@ -21,9 +21,11 @@
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
+// stride required to force all the data to come from DRAM
+#define STRIDE 32768 * 4L
 
-#define MEM 1
-#define FLOP 2
+#define MEM 3
+#define FLOP 1
 
 #define DEBUG
 #ifdef DEBUG
@@ -97,8 +99,11 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
   for (int i = 0; i < ITERATIONS; i++) {
 #pragma unroll
     for (int j = 0; j < MEM; j++) {
-      fragsC[0] = d_X[id];
+      // SWITCH ORDER HERE TO MAKE SURE THAT C0 IS WRITTEN TO MEMORY BEFORE
+      // BEING OVERWRITTEN; NECESSARY FOR COMPILER TO NOT OPTIMIZE AWAY THE
+      // COMPUTATION
       d_Y[id] = fragsC[0];
+      fragsC[0] = d_X[id];
     }
 #pragma unroll
     for (int j = 0; j < FLOP; j++) {
@@ -122,6 +127,7 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
   d_stopClk[id] = stop;
   d_timeStart[id] = time_start;
   d_timeStop[id] = time_stop;
+  // d_X[id] = fragsC[0];
 }
 
 // D = A*B + D
@@ -218,7 +224,7 @@ int main() {
   thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
-      d_A, d_B, d_C, d_X, d_Y d_startClk, d_stopClk, d_timeStart, d_timeStop);
+      d_A, d_B, d_C, d_X, d_Y, d_startClk, d_stopClk, d_timeStart, d_timeStop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
@@ -260,7 +266,7 @@ int main() {
 
   double FLOPS = fma * 2 / total_time / 1e12;
 
-  std::cout << "Bandwidth = " << bw << " (FMA/clk/SM)\n";
+  std::cout << "Bandwidth = " << bw << " (bytes/sec)\n";
 
   std::cout << "FLOPS = " << FLOPS << "(TFLOPs) \n";
   std::cout << "AI = " << fma * 2. / bytes << " (FLOP/byte)\n";
