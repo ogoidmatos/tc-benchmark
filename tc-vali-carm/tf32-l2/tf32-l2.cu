@@ -21,11 +21,9 @@
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
-// stride required to force all the data to come from DRAM
-#define STRIDE 32768 * 4L
 
 #define MEM 3
-#define FLOP 1
+#define FLOP 5
 
 #define DEBUG
 #ifdef DEBUG

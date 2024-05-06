@@ -25,7 +25,7 @@
 #define STRIDE 32768 * 4L
 
 #define MEM 1
-#define FLOP 1
+#define FLOP 7
 
 #define DEBUG
 #ifdef DEBUG
@@ -260,8 +260,8 @@ int main() {
   uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
                  NUM_BLOCKS * FLOP;
 
-  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
-               MEM;  // 2 for read and write
+  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+               NUM_BLOCKS;  // 2 for read and write
 
   double bw = (float)bytes / (float)total_time / 1e9;
 
