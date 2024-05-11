@@ -13,7 +13,7 @@
 
 #define M 16
 #define N 8
-#define K 8
+#define K 16
 
 #define THREADS_PER_BLOCK 1024
 #define NUM_BLOCKS 32768
@@ -21,9 +21,10 @@
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define ITERATIONS 32768
+// stride required to force all the data to come from DRAM
+#define STRIDE 32768 * 4L
 
-#define MEM 4
-#define FLOP 5
+#define FLOP 2
 
 #define DEBUG
 #ifdef DEBUG
@@ -75,57 +76,57 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
   // create registers for threads
   float fragsA[4];
   float fragsB[2];
-  float fragsC[4];
+  float fragsC[2];
 
   for (int i = 0; i < 4; i++) {
     fragsA[i] = d_A[i + id * 4];
-    fragsC[i] = d_C[i + id * 4];
   }
   for (int i = 0; i < 2; i++) {
     fragsB[i] = d_B[i + id * 2];
+    fragsC[i] = d_C[i + id * 2];
   }
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
       &fragsA[0]);  // change from half to bit 32 which is what the mma takes
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&fragsB[0]);
-  float *C = reinterpret_cast<float *>(&fragsC[0]);
+  uint32_t *C = reinterpret_cast<uint32_t *>(&fragsC[0]);
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
-  for (int i = 0; i < ITERATIONS; i++) {
+  for (int i = 0; i < ITERATIONS; i += 32) {
 #pragma unroll
-    for (int j = 0; j < MEM; j++) {
+    for (int j = 0; j < 32; j++) {
       // SWITCH ORDER HERE TO MAKE SURE THAT C0 IS WRITTEN TO MEMORY BEFORE
       // BEING OVERWRITTEN; NECESSARY FOR COMPILER TO NOT OPTIMIZE AWAY THE
       // COMPUTATION
-      d_Y[id] = fragsC[0];
-      fragsC[0] = d_X[id];
-    }
+      d_Y[id + j * STRIDE] = fragsC[0];
+      fragsC[0] = d_X[id + j * STRIDE];
+
 #pragma unroll
-    for (int j = 0; j < FLOP; j++) {
-      // assembly mma
-      asm volatile(
-          "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
-          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
-          : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
-          : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+      for (int j = 0; j < FLOP; j++) {
+        // assembly mma
+        asm volatile(
+            "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 "
+            "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
+            : "+r"(C[0]), "+r"(C[1])
+            : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+      }
     }
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_stop)::"memory");
 
-  for (int i = 0; i < 4; i++) {
-    d_C[i + id * 4] = fragsC[i];
+  for (int i = 0; i < 2; i++) {
+    d_C[i + id * 2] = fragsC[i];
   }
 
   d_startClk[id] = start;
   d_stopClk[id] = stop;
   d_timeStart[id] = time_start;
   d_timeStop[id] = time_stop;
-  // d_X[id] = fragsC[0];
 }
 
 // D = A*B + D
@@ -181,19 +182,23 @@ int main() {
       cudaMemcpy(d_C, h_C, dimC * sizeof(float), cudaMemcpyHostToDevice));
 
   // handle l2 mem handles
-  float *h_X = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
-  float *h_Y = (float *)malloc(NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float));
+  float *h_X = (float *)malloc((NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) *
+                               sizeof(float));
+  float *h_Y = (float *)malloc((NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) *
+                               sizeof(float));
   float *d_X, *d_Y;
-  cudaCheckError(cudaMalloc((void **)&d_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
-  cudaCheckError(cudaMalloc((void **)&d_Y,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float)));
-  cudaCheckError(cudaMemcpy(d_X, h_X,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
-                            cudaMemcpyHostToDevice));
-  cudaCheckError(cudaMemcpy(d_Y, h_Y,
-                            NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(float),
-                            cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMalloc(
+      (void **)&d_X,
+      (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float)));
+  cudaCheckError(cudaMalloc(
+      (void **)&d_Y,
+      (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float)));
+  cudaCheckError(cudaMemcpy(
+      d_X, h_X, (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float),
+      cudaMemcpyHostToDevice));
+  cudaCheckError(cudaMemcpy(
+      d_Y, h_Y, (NUM_BLOCKS * THREADS_PER_BLOCK + 32 * STRIDE) * sizeof(float),
+      cudaMemcpyHostToDevice));
 
   // handle clock
   uint64_t *startClk =
@@ -257,8 +262,8 @@ int main() {
   uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
                  NUM_BLOCKS * FLOP;
 
-  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
-               MEM;  // 2 for read and write
+  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK *
+               NUM_BLOCKS;  // 2 for read and write
 
   double bw = (float)bytes / (float)total_time / 1e9;
 

@@ -23,7 +23,7 @@
 #define ITERATIONS 32768
 
 #define MEM 3
-#define FLOP 2
+#define FLOP 4
 
 #define DEBUG
 #ifdef DEBUG
