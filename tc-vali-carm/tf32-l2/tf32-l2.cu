@@ -20,10 +20,16 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 / 2
 
-#define MEM 4
-#define FLOP 5
+#define MEM 1
+#define FLOP 16
+
+#if MEM > FLOP
+#define REMAINDER MEM - FLOP
+#elif FLOP > MEM
+#define REMAINDER FLOP - MEM
+#endif
 
 #define DEBUG
 #ifdef DEBUG
@@ -95,6 +101,7 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
   for (int i = 0; i < ITERATIONS; i++) {
+#if MEM == 1 || FLOP == 1
 #pragma unroll
     for (int j = 0; j < MEM; j++) {
       // SWITCH ORDER HERE TO MAKE SURE THAT C0 IS WRITTEN TO MEMORY BEFORE
@@ -112,6 +119,44 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
           : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
           : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
     }
+#elif MEM > FLOP
+#pragma unroll
+    for (int j = 0; j < FLOP; j++) {
+      d_Y[id] = fragsC[0];
+      fragsC[0] = d_X[id];
+      // assembly mma
+      asm volatile(
+          "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
+          : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+    }
+#pragma unroll
+    for (int j = 0; j < REMAINDER; j++) {
+      d_Y[id] = fragsC[0];
+      fragsC[0] = d_X[id];
+    }
+#else
+#pragma unroll
+    for (int j = 0; j < MEM; j++) {
+      d_Y[id] = fragsC[0];
+      fragsC[0] = d_X[id];
+      // assembly mma
+      asm volatile(
+          "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
+          : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+    }
+#pragma unroll
+    for (int j = 0; j < REMAINDER; j++) {
+      asm volatile(
+          "mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(C[0]), "+f"(C[1]), "+f"(C[2]), "+f"(C[3])
+          : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]));
+    }
+#endif
   }
   // stop timing
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(stop)::"memory");
@@ -139,7 +184,7 @@ int main() {
   thread_args.clockArray = std::vector<int>();
   thread_args.flag = 0;
 
-  init_nvml(&thread_args, &measuring_thread);
+  init_nvml(&thread_args, &measuring_thread, false);
   cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info
@@ -219,10 +264,27 @@ int main() {
   cudaCheckError(cudaMalloc((void **)&d_timeStop,
                             NUM_BLOCKS * THREADS_PER_BLOCK * sizeof(uint64_t)));
 
+  // Prepare
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  // Start record
+  cudaEventRecord(start, 0);
+
   thread_args.flag = 1;
   // Launch kernel on the GPU
   benchmark_alt<<<NUM_BLOCKS, THREADS_PER_BLOCK>>>(
       d_A, d_B, d_C, d_X, d_Y, d_startClk, d_stopClk, d_timeStart, d_timeStop);
+
+  // Stop event
+  cudaEventRecord(stop, 0);
+  cudaEventSynchronize(stop);
+  float elapsedTime;
+  cudaEventElapsedTime(&elapsedTime, start, stop);  // that's our time!
+  printf("Elapsed time: %f ms\n", elapsedTime);
+  // Clean up:
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
 
   // Wait for GPU to finish
   cudaCheckError(cudaDeviceSynchronize());
@@ -274,6 +336,7 @@ int main() {
   std::cout << "Total Time number = " << total_time << " (sec)\n";
   std::cout << "Average Clock Frequency = " << total_clk / total_time / 1e6
             << " (MHz)\n";
+  std::cout << bytes << " bytes\n";
 
   std::cout << "---------------------------------------------------------\n";
 

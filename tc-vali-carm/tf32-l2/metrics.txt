@@ -1,0 +1,64 @@
+==PROF== Connected to process 19113 (/home/diogomatos/tc-benchmark/tc-vali-carm/tf32-l2/mma)
+==PROF== Profiling "benchmark_alt" - 0: 0%....50%....100% - 3 passes
+---------------------------------------------------------
+Found 1 CUDA devices
+Device 0: NVIDIA GeForce RTX 3080
+   SMs:        68
+   Global mem: 10009 MB
+   CUDA Cap:   8.6
+---------------------------------------------------------
+Bandwidth = 92.0906 (bytes/sec)
+FLOPS = 0.736725(TFLOPs) 
+AI = 8 (FLOP/byte)
+Total Clk number = 69798495138
+Total Time number = 47.7578 (sec)
+Average Clock Frequency = 1461.51 (MHz)
+4398046511104 bytes
+---------------------------------------------------------
+==PROF== Disconnected from process 19113
+[19113] mma@127.0.0.1
+  benchmark_alt(float *, float *, float *, float *, float *, unsigned long *, unsigned long *, unsigned long *, unsigned long *) (32768, 1, 1)x(1024, 1, 1), Context 1, Stream 7, Device 0, CC 8.6
+    Section: Command line profiler metrics
+    ---------------------------------- ----------- --------------
+    Metric Name                        Metric Unit   Metric Value
+    ---------------------------------- ----------- --------------
+    dram__bytes.sum                          Gbyte           3.31
+    l1tex__t_bytes.sum                       Tbyte           4.41
+    lts__t_bytes.sum                         Tbyte           4.40
+    sm__inst_executed_pipe_tensor.sum         inst 17,179,869,184
+    sm__sass_data_bytes_mem_global.sum       Tbyte           4.40
+    sm__sass_data_bytes_mem_local.sum         byte              0
+    sm__sass_data_bytes_mem_shared.sum        byte              0
+    ---------------------------------- ----------- --------------
+
+==PROF== Connected to process 19161 (/home/diogomatos/tc-benchmark/tc-vali-carm/tf32-l2/mma)
+==PROF== Profiling "benchmark_alt" - 0: 0%....50%....100% - 1 pass
+---------------------------------------------------------
+Found 1 CUDA devices
+Device 0: NVIDIA GeForce RTX 3080
+   SMs:        68
+   Global mem: 10009 MB
+   CUDA Cap:   8.6
+---------------------------------------------------------
+Bandwidth = 2273.47 (bytes/sec)
+FLOPS = 18.1877(TFLOPs) 
+AI = 8 (FLOP/byte)
+Total Clk number = 3910046637
+Total Time number = 1.93451 (sec)
+Average Clock Frequency = 2021.21 (MHz)
+4398046511104 bytes
+---------------------------------------------------------
+==PROF== Disconnected from process 19161
+==WARNING== Found outstanding GPU clock reset, trying to revert...Success.
+[19161] mma@127.0.0.1
+  benchmark_alt(float *, float *, float *, float *, float *, unsigned long *, unsigned long *, unsigned long *, unsigned long *) (32768, 1, 1)x(1024, 1, 1), Context 1, Stream 7, Device 0, CC 8.6
+    Section: Command line profiler metrics
+    ---------------------- ----------- ------------
+    Metric Name            Metric Unit Metric Value
+    ---------------------- ----------- ------------
+    gpu__time_duration.avg      second         1.93
+    gpu__time_duration.max      second         1.93
+    gpu__time_duration.min      second         1.93
+    gpu__time_duration.sum      second         1.93
+    ---------------------- ----------- ------------
+
