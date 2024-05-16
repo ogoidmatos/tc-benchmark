@@ -20,12 +20,12 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 / 4
 // stride required to force all the data to come from DRAM
 #define STRIDE 32768 * 4L
 
 #define MEM 1
-#define FLOP 7
+#define FLOP 1
 
 #define DEBUG
 #ifdef DEBUG
@@ -96,11 +96,14 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C, float *d_X,
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
   asm volatile("mov.u64 %0, %%clock64;" : "=l"(start)::"memory");
 
-  for (int i = 0; i < ITERATIONS; i += 32) {
+  for (int i = 0; i < ITERATIONS; i += 32 / MEM) {
 #pragma unroll
-    for (int j = 0; j < 32; j++) {
-      d_Y[id + j * STRIDE] = fragsC[0];
-      fragsC[0] = d_X[id + j * STRIDE];
+    for (int j = 0; j < 32 / MEM; j++) {
+#pragma unroll
+      for (int k = 0; k < MEM; k++) {
+        d_Y[id + (j * MEM + k) * STRIDE] = fragsC[0];
+        fragsC[0] = d_X[id + (j * MEM + k) * STRIDE];
+      }
 #pragma unroll
       for (int j = 0; j < FLOP; j++) {
         // assembly mma
@@ -260,8 +263,8 @@ int main() {
   uint64_t fma = (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
                  NUM_BLOCKS * FLOP;
 
-  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK *
-               NUM_BLOCKS;  // 2 for read and write
+  long bytes = sizeof(float) * 2 * ITERATIONS * THREADS_PER_BLOCK * NUM_BLOCKS *
+               MEM;  // 2 for read and write
 
   double bw = (float)bytes / (float)total_time / 1e9;
 
