@@ -12,7 +12,7 @@
 #include "../../nvml_tools.cu"
 
 #define THREADS_PER_BLOCK 1024
-#define NUM_BLOCKS 1
+#define NUM_BLOCKS 32768
 #define ITERATIONS 32768L
 #define SHARED_MEM_SIZE (32 * 1024 / 4)
 
@@ -63,21 +63,21 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  // __shared__ unsigned s[SHARED_MEM_SIZE];  // static shared memory
+  __shared__ unsigned s[SHARED_MEM_SIZE];  // static shared memory
 
-  // // one thread to initialize the pointer-chasing array
-  // if (id == 0) {
-  //   for (int i = 0; i < SHARED_MEM_SIZE; i++) s[i] = i * 16;
-  // }
-  // // synchronize threads
-  // asm volatile("bar.sync 0;");
-
-  // unsigned addr =
-  //     static_cast<unsigned>(__cvta_generic_to_shared(&s[threadIdx.x * 4]));
-  // https://stackoverflow.com/questions/76992939/confusion-about-cvta-generic-to-shared
-  int x = 0;
+  // one thread to initialize the pointer-chasing array
+  if (id == 0) {
+    for (int i = 0; i < SHARED_MEM_SIZE - 1; i++) s[i] = i * 16 % 1024;
+  }
   // synchronize threads
   asm volatile("bar.sync 0;");
+
+  unsigned x =
+      static_cast<unsigned>(__cvta_generic_to_shared(&s[threadIdx.x * 4]));
+  // https://stackoverflow.com/questions/76992939/confusion-about-cvta-generic-to-shared
+  // int x = 0;
+  // synchronize threads
+  // asm volatile("bar.sync 0;");
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
@@ -211,17 +211,12 @@ int main() {
   // uint64_t fma =
   //     (uint64_t)M * N * K * ITERATIONS * (THREADS_PER_BLOCK / 32) *
   //     NUM_BLOCKS;
-  float bw = (float)bytes / (float)total_clk;
+  int sm = (NUM_BLOCKS > 68) ? 68 : NUM_BLOCKS;
+  float bw_clk = (float)bytes / (float)total_clk / sm;
+  float bw = (float)bytes / (float)total_time / 1e9;
 
-  // double FLOPS = fma * 2 / total_time / 1e12;
-
-  // std::cout << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  latency
-  // "
-  //           << (float)total_clk / (float)ITERATIONS << " cycles\n";
-  // std::cout
-  //     << "mma.sp.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16  FMA Count "
-  //     << fma << "\n";
-  std::cout << "FMA tensor bandwidth = " << bw << " (FMA/clk/SM)\n";
+  std::cout << "Bytes per SM = " << bw_clk << " (Bytes/clk/SM)\n";
+  std::cout << "Bandwidth = " << bw << " (GB/s)\n";
 
   std::cout << "Total Clk number = " << total_clk << "\n";
 

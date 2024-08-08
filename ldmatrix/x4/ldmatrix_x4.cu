@@ -63,24 +63,21 @@ __global__ void benchmark_alt(int *d_X, uint64_t *d_startClk,
   uint64_t time_start = 0;
   uint64_t time_stop = 0;
 
-  // __shared__ unsigned s[SHARED_MEM_SIZE];  // static shared memory
+  __shared__ unsigned s[SHARED_MEM_SIZE];  // static shared memory
 
-  // // one thread to initialize the pointer-chasing array
-  // if (id == 0) {
-  //   for (int i = 0; i < SHARED_MEM_SIZE; i++) s[i] = i * 16;
-  // }
-  // // synchronize threads
-  // asm volatile("bar.sync 0;");
+  // one thread to initialize the pointer-chasing array
+  if (id == 0) {
+    for (int i = 0; i < SHARED_MEM_SIZE - 1; i++) s[i] = i * 16 % 1024;
+  }
+  // synchronize threads
+  asm volatile("bar.sync 0;");
 
-  // unsigned addr =
-  //     static_cast<unsigned>(__cvta_generic_to_shared(&s[threadIdx.x * 4]));
+  unsigned x =
+      static_cast<unsigned>(__cvta_generic_to_shared(&s[threadIdx.x * 4]));
   // https://stackoverflow.com/questions/76992939/confusion-about-cvta-generic-to-shared
-  int x = 0;
   int y = 0;
   int z = 0;
   int w = 0;
-  // synchronize threads
-  asm volatile("bar.sync 0;");
 
   // start timing
   asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(time_start)::"memory");
