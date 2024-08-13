@@ -108,6 +108,21 @@ void stop_nvml(std::thread* measuring_thread, std::vector<int> powerArray,
     statsFile << (float)i * 10.0 / 1000 << ";" << (float)powerArray[i] / 1000.0f
               << ";" << clockArray[i] << ";" << std::endl;
   }
+  int max_power = *std::max_element(powerArray.begin(), powerArray.end());
+  int cutoff = max_power * 0.98;
+
+  // average all values above 98% of max power
+  int sum = 0;
+  int count = 0;
+  for (int i = 0; i < powerArray.size(); i++) {
+    if (powerArray[i] > cutoff) {
+      sum += powerArray[i];
+      count++;
+    }
+  }
+  float avg_power = (float)sum / count;
+  std::cout << "Average power: " << avg_power / 1000.0f << " W" << std::endl;
+
   statsFile.close();
   return;
 }
