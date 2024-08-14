@@ -20,10 +20,10 @@
 #define A_SIZE M *K *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define B_SIZE K *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
 #define C_SIZE M *N *(THREADS_PER_BLOCK / 32) * NUM_BLOCKS
-#define ITERATIONS 32768
+#define ITERATIONS 32768 / 4
 
-#define MEM 1
-#define FLOP 1
+#define MEM 6
+#define FLOP 2
 
 #define DEBUG
 #ifdef DEBUG
@@ -58,6 +58,7 @@ void printCudaInfo() {
     printf("   CUDA Cap:   %d.%d\n", deviceProps.major, deviceProps.minor);
   }
   printf("---------------------------------------------------------\n");
+  cudaSetDevice(0);
 }
 
 // Kernel function
@@ -74,16 +75,16 @@ __global__ void benchmark_alt(float *d_A, float *d_B, float *d_C,
   __shared__ float s[THREADS_PER_BLOCK];
 
   // create registers for threads
-  float fragsA[4];
-  float fragsB[2];
+  half fragsA[8];
+  half fragsB[4];
   float fragsC[4];
 
-  for (int i = 0; i < 4; i++) {
-    fragsA[i] = d_A[i + id * 4];
-    fragsC[i] = d_C[i + id * 4];
+  for (int i = 0; i < 8; i++) {
+    fragsA[i] = d_A[i + id * 8];
   }
-  for (int i = 0; i < 2; i++) {
-    fragsB[i] = d_B[i + id * 2];
+  for (int i = 0; i < 4; i++) {
+    fragsB[i] = d_B[i + id * 4];
+    fragsC[i] = d_C[i + id * 4];
   }
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(
@@ -136,7 +137,7 @@ int main() {
   thread_args.clockArray = std::vector<int>();
   thread_args.flag = 0;
 
-  init_nvml(&thread_args, &measuring_thread);
+  init_nvml(&thread_args, &measuring_thread, false);
   cudaCheckError(cudaDeviceSynchronize());
 
   // Print CUDA info

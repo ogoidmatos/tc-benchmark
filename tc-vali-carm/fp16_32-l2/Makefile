@@ -1,6 +1,6 @@
 EXECUTABLE := mma
 
-CU_FILES   := fp16-shared.cu
+CU_FILES   := tf32-l2.cu
 
 CU_DEPS    :=
 
@@ -16,11 +16,11 @@ OBJDIR=objs
 CXX=g++ -m64
 CXXFLAGS=-O3 -Wall
 LDFLAGS=-L/usr/local/cuda/lib64/ -lnvidia-ml -lcudart
-NVCC=nvcc
+NVCC=/usr/local/cuda-12.0/bin/nvcc
 NVCCFLAGS= -Xptxas -dlcm=cv -Xptxas -dscm=wt -gencode=arch=compute_86,code=\"sm_86,compute_86\" -lnvidia-ml -std=c++11
 
 
-OBJS= $(OBJDIR)/fp16-shared.o
+OBJS= $(OBJDIR)/fp16_32-l2.o
 
 
 .PHONY: dirs clean
